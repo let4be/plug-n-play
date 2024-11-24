@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/plug-n-play",
-  "version": "0.0.6-5",
+  "version": "0.0.6-1",
   "description": "Wallet wrapper/adapter for connecting different wallets on the Internet Computer",
   "module": "dist/plug-n-play.es.js",
   "main": "dist/index.js",
@@ -29,30 +29,26 @@
   "dependencies": {
     "@astrox/sdk-web": "^0.1.41",
     "@astrox/sdk-webview": "^0.1.41",
-    "@dfinity/agent": "^2.1.3",
-    "@dfinity/auth-client": "^2.1.3",
-    "@dfinity/candid": "^2.1.3",
-    "@dfinity/identity": "^2.1.3",
-    "@dfinity/principal": "^2.1.3",
-    "@dfinity/utils": "^2.6.0",
+    "@dfinity/agent": "^2.1.2",
+    "@dfinity/auth-client": "^2.1.2",
+    "@dfinity/candid": "^2.1.2",
+    "@dfinity/identity": "^2.1.2",
+    "@dfinity/principal": "^2.1.2",
+    "@dfinity/utils": "^2.5.1",
     "@fort-major/msq-client": "^0.3.22",
     "@fort-major/msq-shared": "^0.3.5",
-    "@slide-computer/signer": "^3.7.0",
-    "@slide-computer/signer-agent": "^3.7.0",
-    "@slide-computer/signer-transport-plug": "^3.7.0",
-    "@slide-computer/signer-web": "^3.7.0",
     "buffer": "^6.0.3",
     "buffer-crc32": "^1.0.0",
     "crypto-js": "^4.2.0"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.2.2",
-    "@vitest/coverage-v8": "^2.1.5",
+    "@vitest/coverage-v8": "^2.1.2",
     "jsdom": "^25.0.1",
-    "vite": "^5.4.11",
-    "vite-plugin-dts": "^4.3.0",
+    "vite": "^5.4.8",
+    "vite-plugin-dts": "^4.2.3",
     "vite-plugin-static-copy": "^1.0.6",
-    "vitest": "^2.1.5"
+    "vitest": "^2.1.2"
   },
   "engines": {
     "pnpm": ">=9.0.0",

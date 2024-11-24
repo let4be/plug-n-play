@@ -2,32 +2,27 @@
 // Import adapters
 import { NNSAdapter } from "./NNSAdapter";
 import { PlugAdapter } from "./PlugAdapter";
-import { NFIDAdapter } from "./NFIDAdapter";
-import { Adapter } from '../types/index';
+import { Wallet } from '../types/index';
+import dfinityLogo from "../../assets/dfinity.svg";
+import plugLogo from "../../assets/plug.jpg"; 
 
-export const walletList: Adapter.Info[] = [
-  {
-    id: "nfid",
-    name: "NFID",
-    icon: NFIDAdapter.logo,
-    adapter: NFIDAdapter,
-  },
+export const walletList: Wallet.AdapterInfo[] = [
   {
     id: "nns",
     name: "Internet Identity",
-    icon: NNSAdapter.logo,
+    icon: dfinityLogo,
     adapter: NNSAdapter,
   },
   {
     id: "plug",
     name: "Plug Wallet",
-    icon: PlugAdapter.logo,
+    icon: plugLogo,
     adapter: PlugAdapter,
-  }
+  },
+
 ];
 
 export {
   NNSAdapter,
   PlugAdapter,
-  NFIDAdapter,
 };

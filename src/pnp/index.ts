@@ -8,83 +8,149 @@ import {
 import { walletList } from "../adapters";
 import { Principal } from "@dfinity/principal";
 import { getAccountIdentifier } from "../utils/identifierUtils";
+import { ICRC1_IDL } from "../did/icrc1.idl.js";
 
-class PNP implements PNP {
-  account: Wallet.Account | null = null;
-  activeWallet: Adapter.Info | null = null;
-  provider: Adapter.Interface | null = null;
-  config: Wallet.PNPConfig;
-  actorCache: Map<string, ActorSubclass<any>> = new Map();
-  isDev: boolean = true;
-  fetchRootKeys: boolean = false;
+class PNP {
+  state: {
+    account: Wallet.Account | null;
+    activeWallet: string | null;
+    provider: Adapter.Interface | null;
+    canisterActors: Record<string, ActorSubclass<any>>;
+    anonCanisterActors: Record<string, ActorSubclass<any>>;
+    config: Wallet.PNPConfig;
+  };
 
   constructor(config: Wallet.PNPConfig = {}) {
-    this.config = {
-      hostUrl: config.hostUrl || "http://localhost:4943",
-      identityProvider: config.identityProvider || "https://identity.ic0.app",
-      localStorageKey: config.localStorageKey || "pnpConnectedWallet",
-      timeout: config.timeout || 1000 * 60 * 60 * 24, // 1 day in milliseconds
-      verifyQuerySignatures: config.verifyQuerySignatures ?? false,
-      delegationTimeout: config.delegationTimeout || BigInt(24 * 60 * 60 * 1000 * 1000 * 1000),
-      delegationTargets: config.delegationTargets || [],
-      isDev: config.isDev ?? true,
-      ...config,
+    this.state = {
+      account: null,
+      activeWallet: null,
+      provider: null,
+      canisterActors: {},
+      anonCanisterActors: {},
+      config: {
+        hostUrl: config.hostUrl || "http://localhost:4943",
+        localStorageKey: config.localStorageKey || "pnpConnectedWallet",
+        identityProvider: config.identityProvider,
+        timeout: config.timeout || 1000 * 60 * 60 * 24 * 7, // 7 days
+        ...config,
+      },
     };
   }
 
+  getAccountId(): string | null {
+    if (!this.state.provider || !this.state.account) return null;
+    const principalId = this.state.account.owner.toString();
+    return getAccountIdentifier(principalId) || null;
+  }
+
+  getPrincipalId(): Principal | null {
+    return this.state.provider && this.state.account
+      ? this.state.account.owner
+      : null;
+  }
+
   async connect(walletId: string): Promise<Wallet.Account> {
-    const adapter = walletList.find((w) => w.id === walletId);
-    if (!adapter) {
-      throw new Error(`Wallet ${walletId} not found`);
+    const selectedWallet = walletsList.find((w) => w.id === walletId);
+    if (!selectedWallet)
+      throw new Error(`Wallet with ID "${walletId}" not found.`);
+
+    const walletInstance = new selectedWallet.adapter();
+    const isAvailable = await walletInstance.isAvailable();
+
+    if (!isAvailable) {
+      throw new Error(
+        `Wallet "${walletId}" is not available. Please install or enable it.`
+      );
     }
 
-    const instance = new adapter.adapter();
-    if (!(await instance.isAvailable())) {
-      throw new Error(`Wallet ${walletId} is not available`);
+    const connectionResult = await walletInstance.connect(this.state.config);
+    if (!connectionResult || typeof connectionResult === "boolean") {
+      throw new Error(`Failed to connect to wallet "${walletId}".`);
     }
 
-    const account = await instance.connect(this.config);
-    this.account = account;
-    this.activeWallet = walletList.find((w) => w.id === walletId);
-    this.provider = instance;
+    this.state.account = connectionResult;
+    this.state.activeWallet = walletId;
+    this.state.provider = walletInstance;
 
-    localStorage.setItem(this.config.localStorageKey, walletId);
-
-    return account;
+    localStorage.setItem(this.state.config.localStorageKey, walletId);
+    return connectionResult;
   }
 
   async disconnect(): Promise<void> {
-    if (this.provider) {
-      await this.provider.disconnect();
+    if (this.state.provider) await this.state.provider.disconnect();
+    localStorage.removeItem(this.state.config.localStorageKey);
+    this.state.account = null;
+    this.state.activeWallet = null;
+    this.state.provider = null;
+    this.state.canisterActors = {};
+    this.state.anonCanisterActors = {};
+  }
+
+  async callCanister<T>(
+    canisterId: string,
+    methodName: string,
+    args: any[] = [],
+    idl?: any,
+    options?: {
+      isAnon?: boolean;
+      isSigned?: boolean;
     }
-    this.account = null;
-    this.provider = null;
-    this.activeWallet = null;
-    this.actorCache.clear();
-    localStorage.removeItem(this.config.localStorageKey);
+  ): Promise<T> {
+    const { isAnon = false, isSigned = false } = options || {};
+
+    if (!this.state.provider && !isAnon) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const actor = await this.getActor(canisterId, idl || ICRC1_IDL, {
+        isAnon,
+        isSigned,
+      });
+
+      if (typeof actor[methodName] !== "function") {
+        throw new Error(
+          `Method "${methodName}" not found on canister "${canisterId}"`
+        );
+      }
+
+      return await actor[methodName](...args);
+    } catch (error) {
+      console.error(
+        `Error calling method "${methodName}" on canister "${canisterId}":`,
+        error
+      );
+      throw error;
+    }
   }
 
   async getActor<T>(
     canisterId: string,
     idl: any,
     options?: {
-      anon?: boolean;
-      requiresSigning?: boolean;
+      isAnon?: boolean;
+      isForced?: boolean;
+      isSigned?: boolean;
     }
   ): Promise<ActorSubclass<T>> {
-    const { anon = false, requiresSigning = false } = options || {};
-    // Create the actor
-    let actor: ActorSubclass<T>;
+    const { isAnon = false, isForced = false, isSigned = false } = options || {};
 
-    if (anon || !this.provider) {
-      actor = await  this.createAnonymousActor<T>(canisterId, idl);
-    } else {
-      console.log('Creating actor with provider');
-      actor = await this.provider.createActor<T>(canisterId, idl, {
-        requiresSigning,
-      });
-    
+    if (isSigned) {
+      return this.createSignedActor<T>(canisterId, idl);
     }
+
+    const actorCache = isAnon
+      ? this.state.anonCanisterActors
+      : this.state.canisterActors;
+    if (!isForced && actorCache[canisterId]) {
+      return actorCache[canisterId] as ActorSubclass<T>;
+    }
+
+    const actor = isAnon
+      ? await this.createAnonymousActor<T>(canisterId, idl)
+      : await this.createSignedActor<T>(canisterId, idl);
+
+    actorCache[canisterId] = actor;
     return actor;
   }
 
@@ -92,23 +158,32 @@ class PNP implements PNP {
     canisterId: string,
     idl: any
   ): Promise<ActorSubclass<T>> {
-    const agent = HttpAgent.createSync({
-      host: this.config.hostUrl,
-      verifyQuerySignatures: this.config.verifyQuerySignatures
+    const agent = await HttpAgent.create({
+      identity: new AnonymousIdentity(),
+      host: this.state.config.hostUrl,
     });
-    if (this.fetchRootKeys) {
+    if (this.state.config.hostUrl?.includes("localhost")) {
       await agent.fetchRootKey();
     }
-    // Extract the interface factory from the IDL
-    const interfaceFactory = typeof idl === 'function' ? idl : idl._idlFactory || idl.idlFactory;
-    return Actor.createActor<T>(interfaceFactory, { agent, canisterId });
+    return Actor.createActor<T>(idl, { agent, canisterId });
+  }
+
+  private async createSignedActor<T>(
+    canisterId: string,
+    idl: any
+  ): Promise<ActorSubclass<T>> {
+    if (!this.state.provider) throw new Error("Wallet not connected");
+    return this.state.provider.createActor<T>(canisterId, idl);
   }
 
   isWalletConnected(): boolean {
-    return !!this.activeWallet;
+    return !!this.state.activeWallet;
+  }
+
+  activeWallet(): Wallet.Account | null {
+    return this.state.account;
   }
 }
 
-// Export class-based implementation
 export const walletsList = walletList;
 export const createPNP = (config: Wallet.PNPConfig = {}) => new PNP(config);

@@ -1,4 +1,4 @@
-import { Wallet } from '../types/index';
+import { Wallet } from '../../types/index';
 export declare class BatchTransact {
     state: string;
     transactionLlist: Record<string, Wallet.Transaction.Item>;
@@ -12,7 +12,4 @@ export declare class BatchTransact {
     _adapterObj: any;
     constructor(transactionLlist: Record<string, Wallet.Transaction.Item>, _adapterObj: any);
     _prepareTrxArry(): Wallet.Transaction.Item[][];
-    retryExecute(): Promise<void>;
-    execute(): Promise<void>;
-    _processBatch(): Promise<void>;
 }

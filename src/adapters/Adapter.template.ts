@@ -1,54 +1,68 @@
-// src/adapters/Adapter.template.ts
+// src/adapters/Template.template.js
+import { Principal } from '@dfinity/principal';
+import { Wallet, Adapter } from '../types/index';
+import { HttpAgent } from '@dfinity/agent';
 
-import type { ActorSubclass } from "@dfinity/agent";
-import { Principal } from "@dfinity/principal";
-import type { Adapter, Wallet } from "../types";
-
-/**
- * Template adapter class that implements the Adapter.Interface
- */
-export class TemplateAdapter implements Adapter.Interface {
-  static readonly logo: string = "";
-  name: string = "Template";
-  logo: string = "";
-  url: string = "";
+export class TemplateAdapter extends Adapter.Interface {
+  createAgent(options?: { whitelist: string[]; host?: string; }): Promise<HttpAgent> {
+    throw new Error('Method not implemented.');
+  }
+  icrc1Transfer(canisterId: string, params: Wallet.TransferParams): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  icrc1BalanceOf(canisterId: string, account?: Wallet.Account): Promise<BigInt> {
+    throw new Error('Method not implemented.');
+  }
+  name: string;
+  logo: string;
   readyState: string;
+  url: string = '';
 
   constructor() {
-    this.url = '';
-    this.name = 'Template';
-    this.logo = 'path_to_template_logo.svg';
-    this.readyState = "NotDetected";
+      const url = ''; // Add a default value for the 'url' property
+      super(url);
+      this.url = url;
+      this.name = 'Template';
+      this.logo = 'path_to_template_logo.svg';
+      this.readyState = "NotDetected";
   }
 
+  disconnect(): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  getBalance(): Promise<bigint> {
+    throw new Error("Method not implemented.");
+  }
+  requestTransfer: (params: Wallet.TransferParams) => Promise<void> = async (params) => {
+    throw new Error("Method not implemented.");
+  }
+
+  transfer(params: Wallet.TransferParams): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  createActor<T>(canisterId: string, idl: any): Promise<T> {
+    throw new Error("Method not implemented.");
+  }
+  getAccountId(): Promise<string | null> {
+    throw new Error("Method not implemented.");
+  }
+  getPrincipal(): Promise<Principal | null> {
+    throw new Error("Method not implemented.");
+  }
+  isConnected(): Promise<boolean> {
+    throw new Error("Method not implemented.");
+  }
+  whoAmI(): Promise<Principal | null> {
+    throw new Error("Method not implemented.");
+  }
   async isAvailable(): Promise<boolean> {
     return false;
   }
 
-  async connect(config: Wallet.AdapterConfig): Promise<Wallet.Account> {
+  async connect(_config: Wallet.AdapterConfig): Promise<Wallet.Account> {
     return {
       subaccount: null,
       owner: null
     }
-  }
-
-  async disconnect(): Promise<void> {
-    throw new Error("Method not implemented.");
-  }
-
-  async getPrincipal(): Promise<Principal | null> {
-    throw new Error("Method not implemented.");
-  }
-
-  async getAccountId(): Promise<string | null> {
-    throw new Error("Method not implemented.");
-  }
-
-  async isConnected(): Promise<boolean> {
-    throw new Error("Method not implemented.");
-  }
-
-  async createActor<T>(canisterId: string, idl: any): Promise<ActorSubclass<T>> {
-    throw new Error("Method not implemented.");
   }
 }

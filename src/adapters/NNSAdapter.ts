@@ -4,34 +4,20 @@ import { Actor, HttpAgent, type ActorSubclass, Identity } from "@dfinity/agent";
 import { AuthClient } from "@dfinity/auth-client";
 import type { Wallet, Adapter } from "../types/index";
 import { Principal } from "@dfinity/principal";
+import { ICRC1_IDL } from "../did/icrc1.idl.js";
 import { principalToSubAccount } from "@dfinity/utils";
-import dfinityLogo from "../../assets/dfinity.webp";
-import { getAccountIdentifier } from "../utils/identifierUtils";
-import { AdapterState } from "./NFIDAdapter";
 
 export class NNSAdapter implements Adapter.Interface {
-  static readonly logo: string = dfinityLogo;
   // Required property from Adapter.Interface
-  name: string = "Internet Identity";
-  logo: string = NNSAdapter.logo;
   url: string;
   config: Wallet.PNPConfig;
 
   // Internal properties
   private authClient: AuthClient | null = null;
   private agent: HttpAgent | null = null;
-  private state: AdapterState = AdapterState.READY;
 
   constructor() {
     this.url = "https://identity.ic0.app";
-  }
-
-  private setState(newState: AdapterState) {
-    this.state = newState;
-  }
-
-  getState(): AdapterState {
-    return this.state;
   }
 
   // Helper method to initialize the AuthClient
@@ -39,7 +25,7 @@ export class NNSAdapter implements Adapter.Interface {
     if (!this.authClient) {
       this.authClient = await AuthClient.create({
         idleOptions: {
-          idleTimeout: Number(1000 * 60 * 60 * 24), // 1 day in milliseconds
+          idleTimeout: this.config.timeout || 1000 * 60 * 60 * 24 * 7, // 7 days
           disableDefaultIdleCallback: true, // Disable default reload behavior
         },
       });
@@ -49,12 +35,11 @@ export class NNSAdapter implements Adapter.Interface {
 
   // Helper method to initialize the HttpAgent
   private async initAgent(identity: Identity, host: string): Promise<void> {
-    this.agent = HttpAgent.createSync({
+    this.agent = new HttpAgent({
       identity,
       host,
-      verifyQuerySignatures: this.config.verifyQuerySignatures
     });
-    if (this.config.fetchRootKeys) {
+    if (host.includes("localhost") || host.includes("127.0.0.1")) {
       try {
         await this.agent.fetchRootKey();
       } catch (e) {
@@ -70,49 +55,33 @@ export class NNSAdapter implements Adapter.Interface {
     return true;
   }
 
-  getIdentityProvider(isDev: boolean): string {
-    return isDev ? this.config.identityProvider : "https://identity.ic0.app";
-  }
-
   // Connects to the wallet using the provided configuration
   async connect(config: Wallet.PNPConfig): Promise<Wallet.Account> {
-    try {
-      this.setState(AdapterState.LOADING);
-      this.config = config;
-      await this.initAuthClient();
+    this.config = config;
+    await this.initAuthClient();
 
-      const isAuthenticated = await this.authClient!.isAuthenticated();
+    const isAuthenticated = await this.authClient!.isAuthenticated();
 
-      if (!isAuthenticated) {
-        return new Promise<Wallet.Account>((resolve, reject) => {
-          this.authClient!.login({
-            identityProvider: this.getIdentityProvider(config.isDev || true),
-            maxTimeToLive: BigInt(Number(config.delegationTimeout || 24 * 60 * 60 * 1000 * 1000 * 1000)), // 24 hours in nanoseconds
-            onSuccess: async () => {
-              try {
-                const account = await this._continueLogin(config.hostUrl || this.url);
-                this.setState(AdapterState.READY);
-                resolve(account);
-              } catch (error) {
-                this.setState(AdapterState.READY);
-                reject(error);
-              }
-            },
-            onError: (error) => {
-              this.setState(AdapterState.READY);
-              reject(new Error("Authentication failed: " + error));
-            },
-          });
+    if (!isAuthenticated) {
+      return new Promise<Wallet.Account>((resolve, reject) => {
+        this.authClient!.login({
+          identityProvider: config.identityProvider || this.url,
+          onSuccess: async () => {
+            try {
+              const account = await this._continueLogin(config.hostUrl || this.url);
+              resolve(account);
+            } catch (error) {
+              reject(error);
+            }
+          },
+          onError: (error) => {
+            reject(new Error("Authentication failed: " + error));
+          },
         });
-      } else {
-        // User is already authenticated, proceed with login
-        const account = await this._continueLogin(config.hostUrl || this.url);
-        this.setState(AdapterState.READY);
-        return account;
-      }
-    } catch (error) {
-      this.setState(AdapterState.READY);
-      throw error;
+      });
+    } else {
+      // User is already authenticated, proceed with login
+      return this._continueLogin(config.hostUrl || this.url);
     }
   }
 
@@ -131,72 +100,87 @@ export class NNSAdapter implements Adapter.Interface {
     }
   }
 
-  // Check if the wallet is connected
-  async isConnected(): Promise<boolean> {
-    return this.authClient ? this.authClient.isAuthenticated() : false;
-  }
-
-  // Create an actor for interacting with a canister
-  async createActor<T>(canisterId: string, idl: any): Promise<ActorSubclass<T>> {
-    if (!this.agent) {
-      throw new Error("Agent is not initialized. Ensure the wallet is connected.");
-    }
-    return Actor.createActor(idl, {
-      agent: this.agent,
-      canisterId,
-    });
-  }
-
-  // Get the principal associated with the wallet
-  async getPrincipal(): Promise<Principal> {
-    if (!this.authClient) {
-      throw new Error("AuthClient is not initialized. Ensure the wallet is connected.");
-    }
-    return this.authClient.getIdentity().getPrincipal();
-  }
-
-  // Get the subaccount associated with the wallet
-  async getAccountId(): Promise<string> {
-    if (!this.authClient) {
-      throw new Error("AuthClient is not initialized. Ensure the wallet is connected.");
-    }
-    const principal = this.authClient.getIdentity().getPrincipal()
-    const subAccount = principalToSubAccount(principal);
-    if (subAccount) {
-      return subAccount.toString() || "";
-    }
-  }
-
-  // Refresh login when session is about to expire
   private async refreshLogin(): Promise<void> {
     try {
-      await this.connect(this.config);
+      // Re-authenticate the user
+      await this.authClient!.login({
+        onSuccess: async () => {
+          const identity = this.authClient!.getIdentity();
+          await this.initAgent(identity, this.url);
+        },
+        onError: (error) => {
+          console.error("Error during refreshLogin:", error);
+          throw error;
+        },
+      });
     } catch (error) {
-      console.error("Failed to refresh login:", error);
-      await this.disconnect();
+      console.error("Error during refreshLogin:", error);
+      throw error;
     }
-  }
-
-  async undelegatedActor<T>(canisterId: string, idlFactory: any): Promise<ActorSubclass<T>> {
-    return this.createActor(canisterId, idlFactory);
   }
 
   // Disconnects from the wallet
   async disconnect(): Promise<void> {
-    try {
-      this.setState(AdapterState.LOADING);
-      if (this.authClient) {
-        await this.authClient.logout();
-        this.authClient = null;
-      }
-      if (this.agent) {
-        this.agent = null;
-      }
-      localStorage.removeItem(this.config.localStorageKey);
-      this.setState(AdapterState.READY);
-    } catch (error) {
-      this.setState(AdapterState.READY);
-      throw error;
+    if (this.authClient) {
+      await this.authClient.logout();
+      this.agent = null;
+      this.authClient = null;
+      this.config = {};
     }
+  }
+
+  // Creates an actor for a canister with the specified IDL
+  async createActor<T>(
+    canisterId: string,
+    idl: any
+  ): Promise<ActorSubclass<T>> {
+    if (!canisterId || !idl) {
+      throw new Error("Canister ID and IDL are required");
+    }
+
+    if (!this.agent) {
+      throw new Error("Agent is not initialized. Ensure the wallet is connected.");
+    }
+
+    return Actor.createActor<T>(idl, { agent: this.agent, canisterId });
+  }
+
+  // Creates an agent for communication with the Internet Computer
+  async createAgent(options: { whitelist?: string[]; host?: string }): Promise<void> {
+    await this.initAuthClient();
+    const identity = this.authClient!.getIdentity();
+    const host = options.host || this.url;
+    await this.initAgent(identity, host);
+  }
+
+  // Retrieves the ICRC-1 token balance of the specified account
+  async icrc1BalanceOf(
+    canisterId: string,
+    account: Wallet.Account
+  ): Promise<bigint> {
+    if (!this.agent) {
+      throw new Error("Agent is not initialized. Ensure the wallet is connected.");
+    }
+    const actor = Actor.createActor(ICRC1_IDL, {
+      agent: this.agent,
+      canisterId,
+    });
+    const balance = await actor.icrc1_balance_of(account);
+    return balance as bigint;
+  }
+
+  // Performs a transfer of ICRC-1 tokens
+  async icrc1Transfer(
+    canisterId: Principal | string,
+    params: Wallet.TransferParams
+  ): Promise<any> {
+    if (!this.agent) {
+      throw new Error("Agent is not initialized. Ensure the wallet is connected.");
+    }
+    const actor = Actor.createActor(ICRC1_IDL, {
+      agent: this.agent,
+      canisterId: typeof canisterId === "string" ? canisterId : canisterId.toText(),
+    });
+    return actor.icrc1_transfer(params);
   }
 }
