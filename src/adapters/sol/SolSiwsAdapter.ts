@@ -10,6 +10,7 @@ import {
 } from "@solana/wallet-adapter-base";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
+import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
 import { Connection, type PublicKey as SolanaPublicKey } from "@solana/web3.js";
 import { 
     Ed25519KeyIdentity,
@@ -64,8 +65,10 @@ export class SolSiwsAdapter implements Adapter.Interface {
             this.solanaAdapter = new PhantomWalletAdapter();
         } else if (this.id === 'solflareSiws') {
             this.solanaAdapter = new SolflareWalletAdapter({ network });
+        } else if (this.id === 'backpackSiws') {
+            this.solanaAdapter = new BackpackWalletAdapter();
         } else {
-            throw new Error(`Unsupported SIWS adapter ID: ${this.id}. Expected 'phantomSiws' or 'solflareSiws'.`);
+            throw new Error(`Unsupported SIWS adapter ID: ${this.id}. Expected 'phantomSiws', 'solflareSiws', or 'backpackSiws'.`);
         }
 
         this.setupWalletListeners();
@@ -170,6 +173,7 @@ export class SolSiwsAdapter implements Adapter.Interface {
         if (this.state === Adapter.Status.DISCONNECTING || this.state === Adapter.Status.DISCONNECTED) {
             return;
         }
+        const previousState = this.state;
         this.state = Adapter.Status.DISCONNECTING;
         console.log(`[${this.walletName}] Disconnecting...`);
 
@@ -222,7 +226,7 @@ export class SolSiwsAdapter implements Adapter.Interface {
 
         const agent = HttpAgent.createSync({ 
             host: this.config.hostUrl,
-            identity: this.identity,
+            identity: options?.requiresSigning ? this.identity : new AnonymousIdentity(),
             verifyQuerySignatures: this.config.verifyQuerySignatures,
          });
 
@@ -247,76 +251,119 @@ export class SolSiwsAdapter implements Adapter.Interface {
         });
     }
 
-    private async performSiwsLogin(address: string): Promise<{ identity: Identity, principal: Principal }> {
-        const anonSiwsActor = this.createSiwsProviderActor(); 
-
-        // Step 1: Prepare login
-        const prepareResult = await anonSiwsActor.siws_prepare_login(address);
+    private async _prepareLogin(actor: SiwsProviderActor, address: string): Promise<any> {
+        const prepareResult = await actor.siws_prepare_login(address);
         if ('Err' in prepareResult) throw new Error(`SIWS Prepare Login failed: ${JSON.stringify(prepareResult.Err)}`);
-        const siwsMessage = prepareResult.Ok;
-        
-        // Step 2: Format and sign message
+        return prepareResult.Ok;
+    }
+
+    private async _signSiwsMessage(siwsMessage: any): Promise<string> {
         const messageText = formatSiwsMessage(siwsMessage);
         const messageBytes = new TextEncoder().encode(messageText);
-        
-        // Use property check and correct type for signMessage
+
         if (!('signMessage' in this.solanaAdapter)) {
              throw new Error(`Connected Solana adapter '${this.walletName}' does not support signMessage.`);
         }
 
-        // Cast to the type that includes signMessage after the check
         const signerAdapter = this.solanaAdapter as typeof this.solanaAdapter & MessageSignerWalletAdapterProps<string>;
         const signatureBytes = await signerAdapter.signMessage(messageBytes);
-        const signature = bs58.encode(signatureBytes);
+        return bs58.encode(signatureBytes);
+    }
 
-        // Step 3: Generate session identity
+    private _generateSessionIdentity(): { sessionIdentity: Ed25519KeyIdentity, sessionPublicKeyDer: ArrayBuffer } {
         const sessionIdentity = Ed25519KeyIdentity.generate();
         const sessionPublicKeyDer = sessionIdentity.getPublicKey().toDer();
+        return { sessionIdentity, sessionPublicKeyDer };
+    }
 
-        // Step 4: Login
-        const loginResult = await anonSiwsActor.siws_login(signature, address, new Uint8Array(sessionPublicKeyDer));
+    private async _loginWithSiws(
+        actor: SiwsProviderActor, 
+        signature: string, 
+        address: string, 
+        sessionPublicKeyDer: ArrayBuffer
+    ): Promise<any> {
+        const loginResult = await actor.siws_login(signature, address, new Uint8Array(sessionPublicKeyDer));
         if ('Err' in loginResult) throw new Error(`SIWS Login failed: ${JSON.stringify(loginResult.Err)}`);
-        const loginDetails = loginResult.Ok;
-
-        // Step 5: Get delegation
-        const delegationResult = await anonSiwsActor.siws_get_delegation(address, new Uint8Array(sessionPublicKeyDer), loginDetails.expiration);
+        return loginResult.Ok;
+    }
+    
+    private async _getSiwsDelegation(
+        actor: SiwsProviderActor,
+        address: string,
+        sessionPublicKeyDer: ArrayBuffer,
+        expiration: bigint
+    ): Promise<any> {
+        const delegationResult = await actor.siws_get_delegation(address, new Uint8Array(sessionPublicKeyDer), expiration);
         if ('Err' in delegationResult) throw new Error(`SIWS Get Delegation failed: ${JSON.stringify(delegationResult.Err)}`);
+        return delegationResult.Ok;
+    }
 
-        // Step 6: Create delegation identity
-        const signedDelegation = delegationResult.Ok;
-
-        // Use .slice().buffer to ensure ArrayBuffer type and handle targets based on user example
+    private _createDelegationIdentity(
+        signedDelegation: any,
+        sessionIdentity: Ed25519KeyIdentity,
+        userCanisterPublicKeyDer: ArrayBuffer
+    ): DelegationIdentity {
         const delegation = new Delegation(
-            signedDelegation.delegation.pubkey.slice().buffer, // Ensure ArrayBuffer
+            signedDelegation.delegation.pubkey.slice().buffer,
             signedDelegation.delegation.expiration,
-            // Access the inner array if targets exist, otherwise pass undefined or empty array
             signedDelegation.delegation.targets.length > 0 ? signedDelegation.delegation.targets[0] : undefined
         );
 
-        // Construct the structure expected by fromDelegations
         const delegations = [{
             delegation: delegation,
-            // Cast the ArrayBuffer using 'as any' to bypass strict signature type check
             signature: signedDelegation.signature.slice().buffer as any,
         }];
 
-        // Use .slice().buffer for the public key buffer
         const delegationChain = DelegationChain.fromDelegations(
             delegations,
-            loginDetails.user_canister_pubkey.slice().buffer // Ensure ArrayBuffer
+            userCanisterPublicKeyDer
         );
 
         const identity = DelegationIdentity.fromDelegation(sessionIdentity, delegationChain);
-        const principal = identity.getPrincipal();
-
-        // Log the delegation targets from the created identity
+        
+        // Log delegation targets (optional)
         try {
             const chain = identity.getDelegation();
             const targets = chain.delegations.map(d => d.delegation.targets);
-            console.log(`[${this.walletName}] DelegationIdentity created with targets:`, targets.map(t => t.toString()));
+            console.log(`[${this.walletName}] DelegationIdentity created with targets:`, targets);
         } catch (e) {
             console.warn(`[${this.walletName}] Could not log delegation targets:`, e);
         }
+
+        return identity;
+    }
+
+    private async performSiwsLogin(address: string): Promise<{ identity: Identity, principal: Principal }> {
+        const anonSiwsActor = this.createSiwsProviderActor(); 
+
+        // Step 1: Prepare login
+        const siwsMessage = await this._prepareLogin(anonSiwsActor, address);
+        
+        // Step 2: Sign message
+        const signature = await this._signSiwsMessage(siwsMessage);
+
+        // Step 3: Generate session identity
+        const { sessionIdentity, sessionPublicKeyDer } = this._generateSessionIdentity();
+
+        // Step 4: Login
+        const loginDetails = await this._loginWithSiws(anonSiwsActor, signature, address, sessionPublicKeyDer);
+
+        // Step 5: Get delegation
+        const signedDelegation = await this._getSiwsDelegation(
+            anonSiwsActor, 
+            address, 
+            sessionPublicKeyDer, 
+            loginDetails.expiration
+        );
+
+        // Step 6: Create delegation identity
+        const identity = this._createDelegationIdentity(
+            signedDelegation, 
+            sessionIdentity, 
+            loginDetails.user_canister_pubkey.slice().buffer // Ensure ArrayBuffer
+        );
+        
+        const principal = identity.getPrincipal();
 
         return { identity, principal };
     }

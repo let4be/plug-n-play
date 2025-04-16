@@ -28,5 +28,11 @@ export declare class SolSiwsAdapter implements Adapter.Interface {
         requiresSigning?: boolean;
     }): ActorSubclass<T>;
     private createSiwsProviderActor;
+    private _prepareLogin;
+    private _signSiwsMessage;
+    private _generateSessionIdentity;
+    private _loginWithSiws;
+    private _getSiwsDelegation;
+    private _createDelegationIdentity;
     private performSiwsLogin;
 }
