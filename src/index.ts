@@ -54,8 +54,8 @@ export class PNP {
 
       const adapterConfig = this.mergeAdapterConfig(targetWalletId);
 
-      instance = new adapterInfo.adapter(adapterConfig);
-      const account = await instance.connect(adapterConfig);
+      instance = new adapterInfo.adapter(adapterInfo, this.config);
+      const account = await instance.connect();
 
       this.account = account;
       this.activeWallet = adapterInfo;
@@ -88,7 +88,7 @@ export class PNP {
     if (!wallet)
       throw new Error(`Wallet ${walletId} not found in provided adapters`);
     const adapterConfig = this.mergeAdapterConfig(walletId);
-    return new wallet.adapter(adapterConfig);
+    return new wallet.adapter(wallet, this.config);
   }
 
   async disconnect(): Promise<void> {

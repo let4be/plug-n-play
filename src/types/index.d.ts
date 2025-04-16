@@ -6,6 +6,7 @@ import { BatchTransact } from "./src/utils/batchTransact";
 import { AnonymousIdentity, HttpAgent } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { ActorSubclass } from "@dfinity/agent";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
 declare module "*.jpg";
 declare module "*.jpeg";
@@ -49,6 +50,8 @@ export namespace Adapter {
       rpcUrl?: string;
       timeout?: number;
       enabled?: boolean;
+      siwsProviderCanisterId?: string;
+      solanaNetwork?: WalletAdapterNetwork | undefined;
     };
     rpcUrl?: string;
     timeout?: number;
@@ -77,7 +80,7 @@ export namespace Adapter {
     // Core wallet functionality
     isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
-    connect(config: Wallet.PNPConfig): Promise<Wallet.Account>;
+    connect(): Promise<Wallet.Account>;
     disconnect(): Promise<void>;
     getPrincipal(): Promise<Principal>;
     getAccountId(): Promise<string>;

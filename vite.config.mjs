@@ -61,11 +61,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: [
-      'js-sha256',
-      '@astrox/sdk-web',
-      '@astrox/sdk-webview'
-    ],
     esbuildOptions: {
       target: 'es2020',
       format: 'esm',

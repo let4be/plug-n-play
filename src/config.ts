@@ -1,5 +1,6 @@
 import { Adapter } from './types';
 import { ICAdapters } from './adapters/ic'; // Removed defaultICAdapterConfigs import
+import { SolAdapters } from './adapters/sol'; // Added import for SolAdapters
 
 // Main configuration for the PNP library
 export interface PNPConfig {
@@ -11,13 +12,16 @@ export interface PNPConfig {
   fetchRootKeys?: boolean; // Common agent setting
   verifyQuerySignatures?: boolean; // Common agent setting
   localStorageKey?: string;
-  adapters?: Record<string, Partial<Adapter.Info>>; // Use Partial as user might only override some fields
+  siwsProviderCanisterId?: string; // Add SIWS provider Canister ID here
+  // Allow partial overrides for Adapter.Info, including its nested config
+  adapters?: { [key: string]: Partial<Omit<Adapter.Info, 'config'>> & { config?: Partial<Adapter.Info['config']> } };
 }
 
 // Default values for the main configuration
 // Update the type to reflect that 'adapters' now holds config and removed adapterConfigs
-export const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters'>> & {
-  adapters: Record<string, Adapter.Info> // 'adapters' now holds the complete, configured adapter info
+export const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters' | 'siwsProviderCanisterId'>> & {
+  adapters: Record<string, Adapter.Info>; // 'adapters' now holds the complete, configured adapter info
+  siwsProviderCanisterId: string | undefined; // Add default value type
 } = {
   // Global defaults
   hostUrl: "https://icp0.io",
@@ -28,8 +32,10 @@ export const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters'>> & {
   fetchRootKeys: false,
   verifyQuerySignatures: true,
   localStorageKey: "pnpConnectedWallet",
+  siwsProviderCanisterId: undefined, // Default to undefined
   adapters: {
     ...ICAdapters,
+    ...SolAdapters, // Merge SolAdapters into the defaults
   },
 };
 
@@ -38,34 +44,55 @@ export type FullPNPConfig = typeof defaultPNPConfig;
 
 // Function to create a complete configuration object by merging user input with defaults
 export function createPNPConfig(config: PNPConfig = {}): FullPNPConfig { 
-  // Merge the main adapters map (user overrides defaults including config)
   const mergedAdapters = { ...defaultPNPConfig.adapters };
+
   if (config.adapters) {
     for (const adapterId in config.adapters) {
-        const defaultAdapterInfo = defaultPNPConfig.adapters[adapterId] || {}; // Default adapter info (includes config)
-        mergedAdapters[adapterId] = {
-          ...defaultAdapterInfo,
-          ...(config.adapters[adapterId]), // User overrides for this adapter (can include config)
-        } as Adapter.Info; // Assert type here to satisfy the linter
+      const userAdapterOverride = config.adapters[adapterId];
+      if (!userAdapterOverride) continue; // Skip if override is null/undefined
+
+      const defaultAdapterInfo = mergedAdapters[adapterId];
+
+      if (!defaultAdapterInfo) {
+        // Handle case where user provides an adapter ID not in defaults
+        console.warn(`[PNP Config] Adapter ID '${adapterId}' provided by user not found in defaults. Skipping merge for this adapter.`);
+        // Optionally, you could attempt to construct a default-less adapter info here,
+        // but it's safer to warn and potentially skip if the base adapter is unknown.
+        continue;
+      }
+
+      // Perform a more robust merge
+      mergedAdapters[adapterId] = {
+        // Start with default Adapter.Info properties (id, logo, name, adapter constructor)
+        ...defaultAdapterInfo,
+        // Override top-level Adapter.Info properties from user (like enabled)
+        // Use nullish coalescing to ensure user's value is taken if provided
+        id: userAdapterOverride.id ?? defaultAdapterInfo.id,
+        logo: userAdapterOverride.logo ?? defaultAdapterInfo.logo,
+        walletName: userAdapterOverride.walletName ?? defaultAdapterInfo.walletName,
+        adapter: userAdapterOverride.adapter ?? defaultAdapterInfo.adapter,
+        enabled: userAdapterOverride.enabled ?? defaultAdapterInfo.enabled,
+        // Deep merge the 'config' object explicitly
+        config: {
+          ...defaultAdapterInfo.config,      // Start with default config
+          ...(userAdapterOverride.config), // Override with user's partial config
+        },
+      };
     }
   }
 
-  // Determine isDev based on dfxNetwork if not explicitly provided
-  const hostUrl = config.hostUrl ?? "https://icp0.io";
-  const derivationOrigin = config.derivationOrigin ?? "http://localhost:5173";
-
-  // Merge global settings and include the merged adapters map
+  // Merge global settings: User's global settings override defaults
   const mergedConfig: FullPNPConfig = {
     ...defaultPNPConfig,
-    ...config, // User's global settings override defaults
-    hostUrl,
-    derivationOrigin,
-    adapters: mergedAdapters, // Use the merged adapters map (now includes config)
+    ...config,
+    adapters: mergedAdapters, // Use the adapters map with refined merging
   };
-  
-  // Adjust default II identity provider based on isDev, now checking mergedAdapters
-  if (mergedAdapters.ii) {
-      mergedAdapters.ii.config.identityProvider =  mergedAdapters.ii.config.identityProvider ?? "https://identity.ic0.app";
+
+  // Adjust default II identity provider based on merged global config
+  if (mergedAdapters.ii && !config.adapters?.ii?.config?.identityProvider) {
+    mergedAdapters.ii.config.identityProvider = mergedConfig.dfxNetwork === 'local'
+      ? `http://rdmx6-jaaaa-aaaaa-aaadq-cai.localhost:4943` // Example local II, ensure canister ID is correct
+      : 'https://identity.ic0.app';
   }
 
   return mergedConfig;

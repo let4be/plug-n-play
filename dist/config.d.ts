@@ -8,10 +8,16 @@ export interface PNPConfig {
     fetchRootKeys?: boolean;
     verifyQuerySignatures?: boolean;
     localStorageKey?: string;
-    adapters?: Record<string, Partial<Adapter.Info>>;
+    siwsProviderCanisterId?: string;
+    adapters?: {
+        [key: string]: Partial<Omit<Adapter.Info, 'config'>> & {
+            config?: Partial<Adapter.Info['config']>;
+        };
+    };
 }
-export declare const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters'>> & {
+export declare const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters' | 'siwsProviderCanisterId'>> & {
     adapters: Record<string, Adapter.Info>;
+    siwsProviderCanisterId: string | undefined;
 };
 export type FullPNPConfig = typeof defaultPNPConfig;
 export declare function createPNPConfig(config?: PNPConfig): FullPNPConfig;
