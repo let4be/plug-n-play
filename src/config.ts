@@ -95,5 +95,10 @@ export function createPNPConfig(config: PNPConfig = {}): FullPNPConfig {
       : 'https://identity.ic0.app';
   }
 
+  // Explicitly set derivationOrigin for II adapter if not provided
+  if (mergedAdapters.ii && !mergedAdapters.ii.config.derivationOrigin) {
+    mergedAdapters.ii.config.derivationOrigin = mergedConfig.derivationOrigin;
+  }
+
   return mergedConfig;
 }

@@ -3,6 +3,9 @@ import { resolve } from 'path';
 import dts from 'vite-plugin-dts';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import viteCompression from 'vite-plugin-compression';
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill';
+import { NodeModulesPolyfillPlugin } from '@esbuild-plugins/node-modules-polyfill';
+import inject from '@rollup/plugin-inject';
 
 // Determine build environment
 const isProd = process.env.NODE_ENV === 'production';
@@ -30,7 +33,13 @@ export default defineConfig({
         format: 'es',
         exports: 'named',
         manualChunks: isProd ? undefined : null, // Disable code splitting in dev
-      }
+      },
+      plugins: [
+        inject({
+          Buffer: ['buffer', 'Buffer'],
+          process: 'process/browser',
+        }),
+      ]
     },
     commonjsOptions: {
       include: [/node_modules/],
@@ -57,7 +66,11 @@ export default defineConfig({
       '@': resolve(__dirname, './src'),
       '@types': resolve(__dirname, 'src/types'),
       '@src': resolve(__dirname, 'src'),
-      'iso-url': resolve(__dirname, 'src/utils/url-node.ts')
+      'iso-url': resolve(__dirname, 'src/utils/url-node.ts'),
+      buffer: 'buffer/',
+      process: 'process/browser',
+      stream: 'stream-browserify',
+      util: 'util/',
     },
   },
   optimizeDeps: {
@@ -65,8 +78,22 @@ export default defineConfig({
       target: 'es2020',
       format: 'esm',
       mainFields: ['module', 'main'],
-      conditions: ['module', 'import', 'default']
-    }
+      conditions: ['module', 'import', 'default'],
+      define: {
+        global: 'globalThis',
+      },
+      plugins: [
+        NodeGlobalsPolyfillPlugin({
+          buffer: true,
+          process: true,
+        }),
+        NodeModulesPolyfillPlugin()
+      ]
+    },
+    include: [
+      'buffer', 
+      'process/browser'
+    ]
   },
   plugins: [
     // TypeScript declarations plugin - optimized config

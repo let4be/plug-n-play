@@ -1,5 +1,4 @@
 import { ActorSubclass } from '@dfinity/agent';
-import { Principal } from '@dfinity/principal';
 import { Wallet, Adapter } from '../../types/index.d';
 /**
  * Abstract base class for adapters implementing Adapter.Interface
@@ -7,6 +6,7 @@ import { Wallet, Adapter } from '../../types/index.d';
 export declare abstract class BaseIcAdapter implements Adapter.Interface {
     abstract walletName: string;
     abstract logo: string;
+    static supportedChains: Adapter.Chain[];
     protected state: Adapter.Status;
     protected config: Wallet.PNPConfig;
     protected actorCache: Map<string, ActorSubclass<any>>;
@@ -17,7 +17,8 @@ export declare abstract class BaseIcAdapter implements Adapter.Interface {
     abstract isAvailable(): Promise<boolean>;
     abstract isConnected(): Promise<boolean>;
     abstract connect(): Promise<Wallet.Account>;
-    abstract getPrincipal(): Promise<Principal>;
+    abstract getPrincipal(): Promise<string>;
+    getAddresses(): Promise<Adapter.Addresses>;
     createActor<T>(canisterId: string, idl: any, options?: {
         requiresSigning?: boolean;
     }): ActorSubclass<T>;

@@ -1,4 +1,3 @@
-import { Principal } from '@dfinity/principal';
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../../types/index.d';
 import { BaseIcAdapter } from './BaseIcAdapter';
@@ -15,7 +14,7 @@ export declare class OisyAdapter extends BaseIcAdapter implements Adapter.Interf
     constructor(config: Wallet.PNPConfig);
     isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
-    getPrincipal(): Promise<Principal>;
+    getPrincipal(): Promise<string>;
     getAccountId(): Promise<string>;
     connect(): Promise<Wallet.Account>;
     protected createActorInternal<T>(canisterId: string, idlFactory: any): ActorSubclass<T>;

@@ -1,3 +1,5 @@
+// Add buffer polyfill for browser environment
+import 'buffer';
 import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
 import type { Wallet, Adapter } from "./types";
 import { createPNPConfig, type PNPConfig } from "./config";

@@ -58,16 +58,17 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
     return this.agent !== null && this.signer !== null && this.signerAgent !== null;
   }
 
-  async getPrincipal(): Promise<Principal> {
+  async getPrincipal(): Promise<string> {
     if (!this.signerAgent) {
       throw new Error("Oisy signer agent not initialized or connected");
     }
-    return this.signerAgent.getPrincipal();
+    const principal = await this.signerAgent.getPrincipal();
+    return principal.toText();
   }
 
   async getAccountId(): Promise<string> {
     return AccountIdentifier.fromPrincipal({
-      principal: await this.getPrincipal(),
+      principal: Principal.fromText(await this.getPrincipal()),
       subAccount: undefined, // This will use the default subaccount
     }).toHex();
   }
@@ -100,8 +101,8 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
       
       this.setState(Adapter.Status.CONNECTED);
       return {
-        owner: principal,
-        subaccount: hexStringToUint8Array(await this.getAccountId() || ""),
+        owner: principal.toText(),
+        subaccount: await this.getAccountId(),
         hasDelegation: false,
       };
     } catch (error) {

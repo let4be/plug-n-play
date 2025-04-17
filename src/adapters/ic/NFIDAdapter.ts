@@ -74,11 +74,11 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
     return this.identity !== null && this.state === Adapter.Status.CONNECTED;
   }
 
-  async getPrincipal(): Promise<Principal> {
+  async getPrincipal(): Promise<string> {
     if (!this.identity) {
       throw new Error("NFID Adapter: Not connected. Call connect() first.");
     }
-    return this.identity.getPrincipal();
+    return this.identity.getPrincipal().toText();
   }
 
   unwrapResponse = <T extends any>(response: any): T => {
@@ -160,11 +160,11 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
 
       this.setState(Adapter.Status.CONNECTED);
       return {
-        owner: principal,
+        owner: principal.toText(),
         subaccount: AccountIdentifier.fromPrincipal({
           principal,
           subAccount: undefined, // This will use the default subaccount
-        }).toUint8Array(),
+        }).toHex(),
         hasDelegation: true,
       };
     } catch (error) {

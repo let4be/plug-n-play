@@ -94,18 +94,18 @@ export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
     return {
       owner: principal,
       subaccount: AccountIdentifier.fromPrincipal({
-        principal,
+        principal: Principal.fromText(principal),
         subAccount: undefined,
-      }).toUint8Array(),
+      }).toHex(),
     };
   }
   
   // disconnect method is inherited, uses disconnectInternal and cleanupInternal
 
-  async getPrincipal(): Promise<Principal> {
+  async getPrincipal(): Promise<string> {
     // Ensure Plug is available and we have a principal ID
     if (this.readyState === "Connected" && window.ic?.plug?.principalId) {
-      return Principal.fromText(window.ic.plug.principalId);
+      return Principal.fromText(window.ic.plug.principalId).toText();
     } else if (this.readyState === "Installed") {
         // Try connecting silently if installed but not connected? Or just throw?
         throw new Error("Plug wallet is installed but not connected.");

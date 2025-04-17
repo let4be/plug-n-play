@@ -9,16 +9,12 @@ import { AccountIdentifier } from "@dfinity/ledger-icp";
  * Abstract base class for adapters implementing Adapter.Interface
  */
 export abstract class BaseIcAdapter implements Adapter.Interface {
-  // Static logo MUST be defined by subclasses if they need it
-  // static readonly logo: string;
   // Abstract properties to be implemented by subclasses
   abstract walletName: string;
   abstract logo: string;
-
-  // Common properties
+  static supportedChains: Adapter.Chain[] = [Adapter.Chain.ICP];
   protected state: Adapter.Status = Adapter.Status.INIT;
   protected config: Wallet.PNPConfig;
-  // Actor cache for improved performance
   protected actorCache: Map<string, ActorSubclass<any>> = new Map();
 
   constructor(config: Wallet.PNPConfig) {
@@ -39,8 +35,12 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
     const principal = await this.getPrincipal();
     if (!principal)
       throw new Error("Principal not available to derive account ID");
+      
+    console.log("[BaseIcAdapter] Getting account ID for principal:", principal);
+    
+    // Important: Use subAccount (capital A) as per the correct API
     return AccountIdentifier.fromPrincipal({
-      principal: principal,
+      principal: Principal.fromText(principal),
       subAccount: undefined, // Default subaccount
     }).toHex();
   }
@@ -49,8 +49,16 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
   abstract isAvailable(): Promise<boolean>;
   abstract isConnected(): Promise<boolean>;
   abstract connect(): Promise<Wallet.Account>; // Config is available via this.config
-  abstract getPrincipal(): Promise<Principal>; // Subclasses must implement how to get the principal
+  abstract getPrincipal(): Promise<string>; // Subclasses must implement how to get the principal
 
+  async getAddresses(): Promise<Adapter.Addresses> {
+    return {
+      icp: {
+        owner: await this.getPrincipal(),
+        subaccount: await this.getAccountId(),
+      },
+    };
+  }
   // Base implementation of createActor with caching
   createActor<T>(
     canisterId: string,

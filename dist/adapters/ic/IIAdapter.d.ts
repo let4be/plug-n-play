@@ -1,6 +1,5 @@
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../../types/index.d';
-import { Principal } from '@dfinity/principal';
 import { BaseIcAdapter } from './BaseIcAdapter';
 export declare class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
     static readonly logo: string;
@@ -16,7 +15,7 @@ export declare class IIAdapter extends BaseIcAdapter implements Adapter.Interfac
     private _continueLogin;
     isConnected(): Promise<boolean>;
     protected createActorInternal<T>(canisterId: string, idl: any): ActorSubclass<T>;
-    getPrincipal(): Promise<Principal>;
+    getPrincipal(): Promise<string>;
     private refreshLogin;
     protected disconnectInternal(): Promise<void>;
     protected cleanupInternal(): void;

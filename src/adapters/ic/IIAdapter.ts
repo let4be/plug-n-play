@@ -40,7 +40,7 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
 
   // Use the resolved config for agent initialization
   private async initAgent(identity: Identity): Promise<void> {
-    this.agent = new HttpAgent({
+    this.agent = HttpAgent.createSync({
       identity,
       host: this.config.hostUrl, 
       verifyQuerySignatures: this.config.verifyQuerySignatures
@@ -72,13 +72,15 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
 
       if (!isAuthenticated) {
         return new Promise<Wallet.Account>((resolve, reject) => {
+          console.log("[II] Login with AuthClient", this.config);
           this.authClient!.login({
             derivationOrigin: this.config.derivationOrigin,
             identityProvider: this.config.adapters?.ii?.config?.identityProvider || this.config.identityProvider, 
-            maxTimeToLive: this.config.delegationTimeout, 
+            maxTimeToLive: this.config.delegationTimeout || BigInt(1 * 24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
             onSuccess: () => {
               this._continueLogin(this.config.hostUrl)
                 .then(account => {
+                  console.log("[II] Account", account);
                   this.setState(Adapter.Status.READY);
                   resolve(account);
                 })
@@ -95,6 +97,7 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
       }
 
       const account = await this._continueLogin(this.config.hostUrl); 
+      console.log("[II] Account", account);
       this.setState(Adapter.Status.READY);
       return account;
     } catch (error) {
@@ -110,16 +113,25 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
     try {
       const identity = this.authClient.getIdentity();
       const principal = identity.getPrincipal();
+      
+      // Add debugging to see what's happening
+      console.log("[II] Raw Principal:", principal);
+      console.log("[II] Principal Text:", principal.toText());
+      
       if (principal.isAnonymous()) {
         throw new Error("Login resulted in anonymous principal");
       }
       
       await this.initAgent(identity); 
+      
+      // Get the account ID using the base method which derives from principal
+      const accountId = await this.getAccountId();
+      console.log("[II] Derived Account ID:", accountId);
+      
       return {
-        owner: principal,
-        // Derive subaccount using the method from BaseIcAdapter via getAccountId (implicitly)
-        // Or calculate directly if preferred, but using getAccountId promotes reuse
-        subaccount: hexStringToUint8Array(await this.getAccountId() || ""),
+        owner: principal.toText(),
+        // Use the derived account ID
+        subaccount: accountId,
       };
     } catch (error) {
       console.error("[II] Error during _continueLogin:", error);
@@ -147,11 +159,11 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
     });
   }
 
-  async getPrincipal(): Promise<Principal> {
+  async getPrincipal(): Promise<string> {
     if (!this.authClient) throw new Error("Not connected");
     const identity = this.authClient.getIdentity();
     if (!identity) throw new Error("Identity not available");
-    return identity.getPrincipal();
+    return identity.getPrincipal()?.toText() || "";
   }
 
   private async refreshLogin(): Promise<void> {

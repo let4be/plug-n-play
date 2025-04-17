@@ -29,8 +29,8 @@ export namespace Wallet {
   }
 
   export interface Account {
-    subaccount: Uint8Array | null;
-    owner: Principal | null;
+    subaccount: string | null;
+    owner: string | null;
     hasDelegation?: boolean;
   }
 
@@ -52,6 +52,8 @@ export namespace Adapter {
       enabled?: boolean;
       siwsProviderCanisterId?: string;
       solanaNetwork?: WalletAdapterNetwork | undefined;
+      solanaRpcUrl?: string;
+      derivationOrigin?: string;
     };
     rpcUrl?: string;
     timeout?: number;
@@ -76,15 +78,25 @@ export namespace Adapter {
     ERROR = "ERROR",
   }
 
+  export enum Chain {
+    ICP = "icp",
+    SOL = "sol",
+    ETH = "eth",
+  }
+
+  export interface Addresses {
+    [key in Chain]?: string | Wallet.Account;
+  }
+
   export interface Interface {
     // Core wallet functionality
     isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
     connect(): Promise<Wallet.Account>;
     disconnect(): Promise<void>;
-    getPrincipal(): Promise<Principal>;
+    getPrincipal(): Promise<string>;
     getAccountId(): Promise<string>;
-
+    getAddresses(): Promise<Addresses>;
     // Actor creation
     createActor<T>(
       canisterId: string,

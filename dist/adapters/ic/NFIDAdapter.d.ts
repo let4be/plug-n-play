@@ -1,4 +1,3 @@
-import { Principal } from '@dfinity/principal';
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../../types/index.d';
 import { BaseIcAdapter } from './BaseIcAdapter';
@@ -18,7 +17,7 @@ export declare class NFIDAdapter extends BaseIcAdapter implements Adapter.Interf
     constructor(config: Wallet.PNPConfig);
     isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
-    getPrincipal(): Promise<Principal>;
+    getPrincipal(): Promise<string>;
     unwrapResponse: <T extends any>(response: any) => T;
     connect(): Promise<Wallet.Account>;
     undelegatedActor<T>(canisterId: string, idlFactory: any): ActorSubclass<T>;
