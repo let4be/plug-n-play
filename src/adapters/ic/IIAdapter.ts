@@ -3,8 +3,6 @@
 import { Actor, HttpAgent, type ActorSubclass, Identity } from "@dfinity/agent";
 import { AuthClient } from "@dfinity/auth-client";
 import { type Wallet, Adapter } from "../../types/index.d";
-import { Principal } from "@dfinity/principal";
-import { hexStringToUint8Array } from "@dfinity/utils";
 import dfinityLogo from "../../../assets/dfinity.webp";
 import { BaseIcAdapter } from "./BaseIcAdapter";
 
@@ -22,7 +20,7 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
   // Constructor calls super and does II specific initialization
   constructor(config: Wallet.PNPConfig) {
     super(config); // Call base constructor
-    
+
     // Initialize AuthClient immediately, using this.config
     AuthClient.create({
       idleOptions: {
@@ -39,12 +37,13 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
   }
 
   // Use the resolved config for agent initialization
-  private async initAgent(identity: Identity): Promise<void> {
+  private async initAgent(identity: Identity): Promise<void> {    
     this.agent = HttpAgent.createSync({
       identity,
       host: this.config.hostUrl, 
       verifyQuerySignatures: this.config.verifyQuerySignatures
     });
+    
     if (this.config.fetchRootKeys) { 
       try {
         await this.agent.fetchRootKey();
@@ -72,15 +71,13 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
 
       if (!isAuthenticated) {
         return new Promise<Wallet.Account>((resolve, reject) => {
-          console.log("[II] Login with AuthClient", this.config);
           this.authClient!.login({
             derivationOrigin: this.config.derivationOrigin,
-            identityProvider: this.config.adapters?.ii?.config?.identityProvider || this.config.identityProvider, 
-            maxTimeToLive: this.config.delegationTimeout || BigInt(1 * 24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
+            identityProvider: this.config.identityProvider, 
+            maxTimeToLive: BigInt(1 * 24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
             onSuccess: () => {
-              this._continueLogin(this.config.hostUrl)
+              this._continueLogin()
                 .then(account => {
-                  console.log("[II] Account", account);
                   this.setState(Adapter.Status.READY);
                   resolve(account);
                 })
@@ -96,27 +93,32 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
         });
       }
 
-      const account = await this._continueLogin(this.config.hostUrl); 
-      console.log("[II] Account", account);
+      const account = await this._continueLogin(); 
       this.setState(Adapter.Status.READY);
       return account;
     } catch (error) {
-        console.error("[II] Connect error:", error);
-        this.setState(Adapter.Status.ERROR);
-        await this.disconnect().catch(() => {}); // Use inherited disconnect
-        throw error;
+        // Use the helper method
+        await this._handleConnectError(error, "Connect error");
     }
   }
 
-  private async _continueLogin(host: string): Promise<Wallet.Account> {
+  // Helper method for handling errors during connection/login flow
+  private async _handleConnectError(error: unknown, contextMessage: string): Promise<never> {
+      console.error(`[II] ${contextMessage}:`, error);
+      this.setState(Adapter.Status.ERROR);
+      // Attempt to disconnect, but don't let disconnect errors mask the original error
+      await this.disconnect().catch(disconnectError => {
+          console.error("[II] Error during disconnect after handling error:", disconnectError);
+      });
+      // Re-throw the original error to propagate it
+      throw error;
+  }
+
+  private async _continueLogin(): Promise<Wallet.Account> {
     if (!this.authClient) throw new Error("AuthClient not available in _continueLogin");
-    try {
+    try {        
       const identity = this.authClient.getIdentity();
       const principal = identity.getPrincipal();
-      
-      // Add debugging to see what's happening
-      console.log("[II] Raw Principal:", principal);
-      console.log("[II] Principal Text:", principal.toText());
       
       if (principal.isAnonymous()) {
         throw new Error("Login resulted in anonymous principal");
@@ -126,7 +128,6 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
       
       // Get the account ID using the base method which derives from principal
       const accountId = await this.getAccountId();
-      console.log("[II] Derived Account ID:", accountId);
       
       return {
         owner: principal.toText(),
@@ -134,10 +135,8 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
         subaccount: accountId,
       };
     } catch (error) {
-      console.error("[II] Error during _continueLogin:", error);
-      this.setState(Adapter.Status.ERROR);
-      await this.disconnect().catch(() => {});
-      throw error;
+      // Use the helper method
+      await this._handleConnectError(error, "Error during _continueLogin");
     }
   }
 
@@ -163,11 +162,11 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
     if (!this.authClient) throw new Error("Not connected");
     const identity = this.authClient.getIdentity();
     if (!identity) throw new Error("Identity not available");
-    return identity.getPrincipal()?.toText() || "";
+    const principal = identity.getPrincipal();
+    return principal.toText();
   }
 
   private async refreshLogin(): Promise<void> {
-    console.debug("[II] Refreshing login due to idle timeout.");
     try {
       await this.connect(); 
     } catch (error) {

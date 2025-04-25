@@ -36,6 +36,16 @@ export class PNP {
     };
   }
 
+  // Helper method to reset connection state
+  private _resetState(): void {
+    this.account = null;
+    this.provider = null;
+    this.activeWallet = null;
+    this.actorCache.clear();
+    localStorage.removeItem(this.config.localStorageKey);
+    // Note: isConnecting is handled separately in connect/disconnect callers
+  }
+
   async connect(walletId?: string): Promise<Wallet.Account | null> {
     if (this.isConnecting) return null;
     this.isConnecting = true;
@@ -56,7 +66,10 @@ export class PNP {
 
       const adapterConfig = this.mergeAdapterConfig(targetWalletId);
 
-      instance = new adapterInfo.adapter(adapterInfo, this.config);
+      // Some adapters expect both adapterInfo and config parameters
+      instance = adapterInfo.adapter.length > 1 
+        ? new adapterInfo.adapter(adapterInfo, this.config)
+        : new adapterInfo.adapter(this.config);
       const account = await instance.connect();
 
       this.account = account;
@@ -75,13 +88,10 @@ export class PNP {
           console.warn("[PNP] Disconnect error:", disconnectError);
         }
       }
-      this.account = null;
-      this.provider = null;
-      this.activeWallet = null;
-      localStorage.removeItem(this.config.localStorageKey);
+      this._resetState(); // Use helper method
       return null;
     } finally {
-      this.isConnecting = false;
+      this.isConnecting = false; // Still need to reset this flag here
     }
   }
 
@@ -94,24 +104,17 @@ export class PNP {
   }
 
   async disconnect(): Promise<void> {
+    // isConnecting should logically be false if disconnect is called,
+    // but setting it ensures consistency if called unexpectedly.
     this.isConnecting = false;
     try {
       if (this.provider) await this.provider.disconnect();
-      this.account = null;
-      this.provider = null;
-      this.activeWallet = null;
-      this.actorCache.clear();
-      localStorage.removeItem(this.config.localStorageKey);
+      this._resetState(); // Use helper method
     } catch (error) {
       console.warn("[PNP] Disconnect error:", error);
-      this.account = null;
-      this.provider = null;
-      this.activeWallet = null;
-      this.actorCache.clear();
-      localStorage.removeItem(this.config.localStorageKey);
-    } finally {
-      this.isConnecting = false;
+      this._resetState(); // Also use helper method on error
     }
+    // No finally block needed for state reset anymore
   }
 
   getActor<T>(
@@ -165,7 +168,7 @@ export class PNP {
   getEnabledWallets(): Adapter.Info[] {
     return Object.values(this.adapters).filter((wallet) => {
       const adapterConfig = this.config.adapters[wallet.id];
-      // Enabled if explicitly true or not defined (defaults to true implicitly)
+      // Disabled if explicitly false or not defined (defaults to false implicitly)
       return adapterConfig?.enabled !== false;
     });
   }

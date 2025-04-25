@@ -99,7 +99,6 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
 
     // --- Connection Flow (Handles both initial and potential re-establishment) ---
     if (!this.signer || !this.transport || !this.agent) {
-      console.error("[NFID] Adapter not initialized correctly before connect.");
       this.setState(Adapter.Status.ERROR);
       throw new Error("NFID Adapter not initialized correctly.");
     }
@@ -120,9 +119,11 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
       // This call will prompt the user if necessary or use existing session
       const delegationChain = await this.signer.delegation({
         publicKey: this.sessionKey.getPublicKey().toDer(),
-        targets: this.config.delegationTargets.map((target) =>
-          Principal.fromText(target)
-        ),
+        targets: Array.isArray(this.config.delegationTargets) 
+          ? this.config.delegationTargets
+              .filter((target): target is string => typeof target === 'string' && target.length > 0)
+              .map(target => Principal.fromText(target))
+          : [],
         maxTimeToLive: maxTimeToLiveNs,
       });
 
@@ -147,7 +148,6 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
       const principal = delegationIdentity.getPrincipal();
 
       if (principal.isAnonymous()) {
-        console.warn("[NFID] Connect failed: got anonymous principal.");
         this.setState(Adapter.Status.READY);
         // Clear potentially invalid state
         this.identity = null;
@@ -165,10 +165,8 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
           principal,
           subAccount: undefined, // This will use the default subaccount
         }).toHex(),
-        hasDelegation: true,
       };
     } catch (error) {
-      console.error("[NFID] Error during connection:", error);
       // Attempt cleanup on error
       this.identity = null;
       this.signerAgent = null;

@@ -29,11 +29,8 @@ import { formatSiwsMessage } from "./utils";
 import type { _SERVICE as SiwsProviderService } from "../../did/ic_siws_provider";
 import { idlFactory as siwsProviderIdlFactory } from "../../did/ic_siws_provider.did.js";
 import { AccountIdentifier } from "@dfinity/ledger-icp";
-import { hexStringToUint8Array } from "@dfinity/utils";
 import {
   TOKEN_PROGRAM_ID,
-  getAccount,
-  type Account as TokenAccount,
 } from "@solana/spl-token";
 
 // Define SIWS Provider Actor interface using generated types
@@ -198,7 +195,6 @@ export class SolSiwsAdapter implements Adapter.Interface {
     try {
       // 1. Ensure Solana Wallet is Connected
       if (!this.solanaAdapter.connected) {
-        console.log(`[${this.walletName}] Connecting Solana wallet...`);
         await this.solanaAdapter.connect(); // This triggers the 'connect' listener if successful
       }
       // Ensure address is set (might happen via listener or if already connected)
@@ -208,13 +204,8 @@ export class SolSiwsAdapter implements Adapter.Interface {
         );
       }
       this.solanaAddress = this.solanaAdapter.publicKey.toBase58();
-      console.log(
-        `[${this.walletName}] Using Solana address:`,
-        this.solanaAddress
-      );
 
       // 2. Perform SIWS Flow
-      console.log(`[${this.walletName}] Starting SIWS flow...`);
       const siwsResult = await this.performSiwsLogin(this.solanaAddress);
       this.identity = siwsResult.identity;
       this.principal = siwsResult.principal;
@@ -226,12 +217,6 @@ export class SolSiwsAdapter implements Adapter.Interface {
       }
 
       this.state = Adapter.Status.CONNECTED;
-      console.log(
-        `[${
-          this.walletName
-        }] SIWS Connect successful. Principal: ${this.principal.toText()}`
-      );
-
       // Return the IC account details
       return { owner: this.principal?.toText(), subaccount: null }; // SIWS typically doesn't involve subaccounts
     } catch (error) {
@@ -249,9 +234,7 @@ export class SolSiwsAdapter implements Adapter.Interface {
     ) {
       return;
     }
-    const previousState = this.state;
     this.state = Adapter.Status.DISCONNECTING;
-    console.log(`[${this.walletName}] Disconnecting...`);
 
     try {
       // Disconnect Solana wallet if connected
@@ -272,7 +255,6 @@ export class SolSiwsAdapter implements Adapter.Interface {
       this.identity = null;
       this.principal = null;
       this.solanaAddress = null;
-      // Clear localStorage persistence (assuming PNP core handles this based on activeWallet)
       this.state = Adapter.Status.DISCONNECTED;
       console.log(`[${this.walletName}] Disconnected.`);
     }
@@ -309,7 +291,7 @@ export class SolSiwsAdapter implements Adapter.Interface {
       sol: this.solanaAddress,
       icp: {
         owner: this.principal?.toText(),
-        subaccount: this.getAccountId(),
+        subaccount: await this.getAccountId(),
       },
     };
   }
@@ -624,8 +606,6 @@ export class SolSiwsAdapter implements Adapter.Interface {
         console.log(`Using estimated SOL price: $${estimatedSolPrice}, USD value: $${solUsdValue}`);
       }
 
-      console.log(`Fetched ${Object.keys(priceMap).length} token prices`);
-
       const balances: SplTokenBalance[] = [];
       
       // Add SOL as first token in the list
@@ -710,7 +690,6 @@ export class SolSiwsAdapter implements Adapter.Interface {
   // --- SIWS Specific Methods ---
 
   private createSiwsProviderActor(identity?: Identity): SiwsProviderActor {
-    console.log("Creating SIWS provider actor with canister ID:", this.config);
     if (!this.config.siwsProviderCanisterId) {
       throw new Error("SIWS provider canister ID not configured.");
     }
@@ -872,18 +851,6 @@ export class SolSiwsAdapter implements Adapter.Interface {
       sessionIdentity,
       delegationChain
     );
-
-    // Log delegation targets (optional)
-    try {
-      const chain = identity.getDelegation();
-      const targets = chain.delegations.map((d) => d.delegation.targets);
-      console.log(
-        `[${this.walletName}] DelegationIdentity created with targets:`,
-        targets
-      );
-    } catch (e) {
-      console.warn(`[${this.walletName}] Could not log delegation targets:`, e);
-    }
 
     return identity;
   }

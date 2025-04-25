@@ -14,6 +14,7 @@ export declare class PNP {
     constructor(config?: PNPConfig);
     private getAdapterConfig;
     private mergeAdapterConfig;
+    private _resetState;
     connect(walletId?: string): Promise<Wallet.Account | null>;
     getAdapter(walletId: string): Adapter.Interface;
     disconnect(): Promise<void>;

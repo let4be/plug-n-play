@@ -3,6 +3,7 @@ import { Wallet, Adapter } from '../../types/index.d';
 import { BaseIcAdapter } from './BaseIcAdapter';
 export declare class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
     private static readonly TRANSPORT_CONFIG;
+    private static readonly OISY_PRINCIPAL_KEY;
     private signer;
     private agent;
     private signerAgent;

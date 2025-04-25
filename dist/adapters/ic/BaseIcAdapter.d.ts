@@ -21,6 +21,7 @@ export declare abstract class BaseIcAdapter implements Adapter.Interface {
     getAddresses(): Promise<Adapter.Addresses>;
     createActor<T>(canisterId: string, idl: any, options?: {
         requiresSigning?: boolean;
+        anon?: boolean;
     }): ActorSubclass<T>;
     protected abstract createActorInternal<T>(canisterId: string, idl: any, options?: {
         requiresSigning?: boolean;

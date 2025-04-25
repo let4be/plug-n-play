@@ -6,7 +6,6 @@ import { PostMessageTransport } from "@slide-computer/signer-web";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
 import { AccountIdentifier } from "@dfinity/ledger-icp";
-import { hexStringToUint8Array } from "@dfinity/utils";
 import { BaseIcAdapter } from "./BaseIcAdapter";
 
 export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
@@ -17,6 +16,8 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
     statusPollingRate: 500,
     detectNonClickEstablishment: false,
   };
+
+  private static readonly OISY_PRINCIPAL_KEY = "oisy_principal"; // Key for localStorage
 
   private signer: Signer | null = null;
   private agent: HttpAgent | SignerAgent<any> | null = null;
@@ -60,7 +61,17 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
 
   async getPrincipal(): Promise<string> {
     if (!this.signerAgent) {
-      throw new Error("Oisy signer agent not initialized or connected");
+      // If we have existing transport and signer but missing signerAgent, recreate only what's needed
+      if (this.transport && this.signer) {
+        this.agent = HttpAgent.createSync({ host: this.config.hostUrl });
+        this.signerAgent = SignerAgent.createSync({
+          signer: this.signer,
+          account: Principal.anonymous(),
+          agent: this.agent,
+        });
+      } else {
+        throw new Error("Oisy signer agent not initialized or connected");
+      }
     }
     const principal = await this.signerAgent.getPrincipal();
     return principal.toText();
@@ -76,23 +87,60 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
   async connect(): Promise<Wallet.Account> {
     this.setState(Adapter.Status.CONNECTING);
     try {
-      if (!this.signerAgent || !this.signerAgent.signer) {
+      // If we don't have a signerAgent but we have transport and signer, recreate signerAgent only
+      if (!this.signerAgent && this.transport && this.signer) {
+        this.agent = HttpAgent.createSync({ host: this.config.hostUrl });
+        this.signerAgent = SignerAgent.createSync({
+          signer: this.signer,
+          account: Principal.anonymous(),
+          agent: this.agent,
+        });
+      } else if (!this.signerAgent || !this.signerAgent.signer) {
         throw new Error("Oisy signer agent not initialized. Was the constructor called with config?");
       }
             
-      const accounts = await this.signerAgent.signer.accounts();
-      if (!accounts || accounts.length === 0) {
-        this.disconnect();
-        throw new Error("No accounts returned from Oisy");
+      let principal: Principal;
+      const storedPrincipal = localStorage.getItem(OisyAdapter.OISY_PRINCIPAL_KEY);
+
+      if (storedPrincipal && storedPrincipal !== "null" && storedPrincipal !== "undefined") {
+        console.debug("[Oisy] Attempting to use stored principal:", storedPrincipal);
+        try {
+          principal = Principal.fromText(storedPrincipal);
+          // Assume the stored principal is valid for now to avoid the popup.
+          // If it's invalid, subsequent agent operations will likely fail.
+          this.signerAgent.replaceAccount(principal);
+          console.debug("[Oisy] Replaced account with stored principal.");
+        } catch (e) {
+          console.warn("[Oisy] Failed to parse stored principal, proceeding with normal flow:", e);
+          localStorage.removeItem(OisyAdapter.OISY_PRINCIPAL_KEY);
+          // Fall through to normal connection flow if parsing fails
+          const accounts = await this.signerAgent.signer.accounts();
+          if (!accounts || accounts.length === 0) {
+            this.disconnect();
+            throw new Error("No accounts returned from Oisy");
+          }
+          principal = accounts[0].owner;
+          localStorage.setItem(OisyAdapter.OISY_PRINCIPAL_KEY, principal.toText());
+          this.signerAgent.replaceAccount(principal); // Ensure agent has the correct account even after fallback
+        }
+      } else {
+        const accounts = await this.signerAgent.signer.accounts();
+        if (!accounts || accounts.length === 0) {
+          this.disconnect();
+          throw new Error("No accounts returned from Oisy");
+        }
+
+        principal = accounts[0].owner;
+        localStorage.setItem(OisyAdapter.OISY_PRINCIPAL_KEY, principal.toText());
+        // No need to call replaceAccount here as the agent is likely fresh or will be handled below
+        // If the agent existed before, it might need replacement, let's ensure it.
+        this.signerAgent.replaceAccount(principal);
       }
 
-      const principal = accounts[0].owner;
       if (principal.isAnonymous()) {
         this.setState(Adapter.Status.READY);
         throw new Error("Failed to authenticate with Oisy - got anonymous principal");
       }
-
-      this.signerAgent.replaceAccount(principal);
 
       if (this.config.fetchRootKeys) {
         if (!this.signerAgent) throw new Error("Signer agent not ready for fetchRootKeys");
@@ -103,7 +151,6 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
       return {
         owner: principal.toText(),
         subaccount: await this.getAccountId(),
-        hasDelegation: false,
       };
     } catch (error) {
       console.error("[Oisy] Connection error:", error);
@@ -142,12 +189,15 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
         console.debug("[Oisy] Error closing signer channel:", error);
       }
     }
+    // Clear stored principal on disconnect
+    localStorage.removeItem(OisyAdapter.OISY_PRINCIPAL_KEY);
+    console.debug("[Oisy] Cleared stored principal from localStorage.");
   }
 
   protected cleanupInternal(): void {
-    this.signer = null;
+    // Reset agents but keep transport and signer for faster reconnection
     this.agent = null;
     this.signerAgent = null;
-    this.transport = null;
+    // Don't reset transport or signer: this.transport = null; this.signer = null;
   }
 }

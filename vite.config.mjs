@@ -12,7 +12,7 @@ const isProd = process.env.NODE_ENV === 'production';
 
 export default defineConfig({
   build: {
-    sourcemap: !isProd, // Only generate sourcemaps in development
+    sourcemap: true, // Only generate sourcemaps in development
     minify: isProd ? 'esbuild' : false, // Only minify in production using faster esbuild
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
@@ -37,7 +37,6 @@ export default defineConfig({
       plugins: [
         inject({
           Buffer: ['buffer', 'Buffer'],
-          process: 'process/browser',
         }),
       ]
     },

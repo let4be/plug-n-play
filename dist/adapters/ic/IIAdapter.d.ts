@@ -12,6 +12,7 @@ export declare class IIAdapter extends BaseIcAdapter implements Adapter.Interfac
     private initAgent;
     isAvailable(): Promise<boolean>;
     connect(): Promise<Wallet.Account>;
+    private _handleConnectError;
     private _continueLogin;
     isConnected(): Promise<boolean>;
     protected createActorInternal<T>(canisterId: string, idl: any): ActorSubclass<T>;

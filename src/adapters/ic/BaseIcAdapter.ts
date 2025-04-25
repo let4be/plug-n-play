@@ -1,6 +1,6 @@
 // src/adapters/BaseIcAdapter.ts
 
-import { type ActorSubclass } from "@dfinity/agent";
+import { Actor, type ActorSubclass } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { type Wallet, Adapter } from "../../types/index.d"; // Adjusted path
 import { AccountIdentifier } from "@dfinity/ledger-icp";
@@ -35,14 +35,20 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
     const principal = await this.getPrincipal();
     if (!principal)
       throw new Error("Principal not available to derive account ID");
-      
-    console.log("[BaseIcAdapter] Getting account ID for principal:", principal);
     
-    // Important: Use subAccount (capital A) as per the correct API
-    return AccountIdentifier.fromPrincipal({
-      principal: Principal.fromText(principal),
-      subAccount: undefined, // Default subaccount
-    }).toHex();
+    try {
+      const principalObj = Principal.fromText(principal);
+      
+      const accountId = AccountIdentifier.fromPrincipal({
+        principal: principalObj,
+        subAccount: undefined, // Default subaccount
+      }).toHex();
+      
+      return accountId;
+    } catch (err) {
+      console.error("[BaseIcAdapter] Error deriving account ID:", err);
+      throw err;
+    }
   }
 
   // Abstract methods to be implemented by subclasses
@@ -63,12 +69,13 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
   createActor<T>(
     canisterId: string,
     idl: any,
-    options?: { requiresSigning?: boolean }
+    options?: { requiresSigning?: boolean, anon?: boolean }
   ): ActorSubclass<T> {
+    const { anon = false, requiresSigning = false } = options;
     // Generate cache key that doesn't depend on async getPrincipal
     const cacheKey = `${this.walletName}-${canisterId}-${
-      options?.requiresSigning || false
-    }`;
+      requiresSigning
+    }-${anon}`;
 
     // Check if we have a cached actor
     const cachedActor = this.actorCache.get(cacheKey);
@@ -77,7 +84,14 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
     }
 
     // No cached actor, create a new one
-    const actor = this.createActorInternal<T>(canisterId, idl, options);
+    let actor: ActorSubclass<T>;
+    if (anon) {
+      actor = Actor.createActor<T>(idl, {
+        canisterId,
+      });
+    } else {
+      actor = this.createActorInternal<T>(canisterId, idl, options);
+    }
     this.actorCache.set(cacheKey, actor);
     return actor;
   }
@@ -101,14 +115,6 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
     this.setState(Adapter.Status.DISCONNECTING);
     try {
       await this.disconnectInternal(); // Call subclass-specific logic
-
-      // Common cleanup: remove persisted wallet ID
-      if (this.config?.localStorageKey) {
-        localStorage.removeItem(this.config.localStorageKey);
-      }
-
-      // Clear actor cache on disconnect
-      this.actorCache.clear();
     } catch (error) {
       console.error(`[${this.walletName}] Error during disconnect:`, error);
       // Ensure state is set even on error, but maybe log or handle differently
@@ -122,6 +128,15 @@ export abstract class BaseIcAdapter implements Adapter.Interface {
   // Default implementations do nothing, subclasses can override if needed.
   protected async disconnectInternal(): Promise<void> {
     /* No-op by default */
+    console.log(`[${this.walletName}] Disconnecting...`);
+
+    // Clear actor cache on disconnect
+    this.actorCache.clear();
+
+    // Clear localStorage on disconnect   
+    if (this.config?.localStorageKey) {
+      localStorage.removeItem(this.config.localStorageKey);
+    }
   }
   protected cleanupInternal(): void {
     /* No-op by default */

@@ -18,6 +18,8 @@ const ICAdapters: Record<string, Adapter.Info> = {
     id: 'oisy',
     walletName: OisyAdapter.walletName,
     logo: OisyAdapter.logo, 
+    website: "https://oisy.com",
+    chain: 'ICP',
     adapter: OisyAdapter,
     config: {
       ...commonDefaultConfig,
@@ -28,6 +30,8 @@ const ICAdapters: Record<string, Adapter.Info> = {
     id: 'nfid',
     walletName: NFIDAdapter.walletName,
     logo: NFIDAdapter.logo, 
+    website: "https://nfid.one",
+    chain: 'ICP',
     adapter: NFIDAdapter,
     config: {
       ...commonDefaultConfig,
@@ -38,6 +42,8 @@ const ICAdapters: Record<string, Adapter.Info> = {
     id: 'ii',
     walletName: IIAdapter.walletName,
     logo: IIAdapter.logo,
+    website: "https://internetcomputer.org",
+    chain: 'ICP',
     adapter: IIAdapter,
     config: {
       ...commonDefaultConfig,
@@ -48,6 +54,8 @@ const ICAdapters: Record<string, Adapter.Info> = {
     id: 'plug',
     walletName: PlugAdapter.walletName,
     logo: PlugAdapter.logo, 
+    website: "https://plugwallet.io",
+    chain: 'ICP',
     adapter: PlugAdapter,
     config: {
       ...commonDefaultConfig,

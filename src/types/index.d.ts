@@ -31,7 +31,6 @@ export namespace Wallet {
   export interface Account {
     subaccount: string | null;
     owner: string | null;
-    hasDelegation?: boolean;
   }
 
   export type AdapterConstructor = new (config: Wallet.PNPConfig) => Adapter.Interface;
@@ -43,6 +42,8 @@ export namespace Adapter {
     id: string;
     logo: string;
     walletName: string;
+    chain: 'ICP' | 'SOL';
+    website?: string;
     adapter: AdapterConstructor;
     config: {
       identityProvider?: string;

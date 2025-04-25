@@ -27,7 +27,7 @@ interface PNP {
 export const selectedWalletId = writable<string | null>(null);
 export const pnpInstance = writable<PNP | null>(null); // Store the actual PNP instance
 export const isConnected = writable(false);
-export const principalId = writable<Principal | null>(null); // Store Principal object
+export const principalId = writable<string | null>(null); // Store Principal object
 export const accountId = writable<string | null>(null); // Store Account ID string
 
 // Derived store for available wallets from the initialized instance
@@ -58,7 +58,6 @@ export const initializePNP = () => {
     if (storedWalletId && !get(isConnected)) { // Check if not already connected
         pnp.connect().then(async account => { // Make callback async
             if (account && pnp.provider) { // Check for provider too
-                console.log("Restored connection for:", storedWalletId, account);
                 selectedWalletId.set(storedWalletId);
                 isConnected.set(true);
                 principalId.set(account.owner);
@@ -110,7 +109,6 @@ export const connectWallet = async (walletId: string) => {
         try {
             const accId = await pnp.provider.getAccountId();
             accountId.set(accId);
-            console.log("Connected account:", account, "AccountId:", accId);
         } catch (accIdError) {
              console.error("Failed to get accountId after connect:", accIdError);
              accountId.set(null); // Set accountId to null if fetch fails

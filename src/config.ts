@@ -88,17 +88,5 @@ export function createPNPConfig(config: PNPConfig = {}): FullPNPConfig {
     adapters: mergedAdapters, // Use the adapters map with refined merging
   };
 
-  // Adjust default II identity provider based on merged global config
-  if (mergedAdapters.ii && !config.adapters?.ii?.config?.identityProvider) {
-    mergedAdapters.ii.config.identityProvider = mergedConfig.dfxNetwork === 'local'
-      ? `http://rdmx6-jaaaa-aaaaa-aaadq-cai.localhost:4943` // Example local II, ensure canister ID is correct
-      : 'https://identity.ic0.app';
-  }
-
-  // Explicitly set derivationOrigin for II adapter if not provided
-  if (mergedAdapters.ii && !mergedAdapters.ii.config.derivationOrigin) {
-    mergedAdapters.ii.config.derivationOrigin = mergedConfig.derivationOrigin;
-  }
-
   return mergedConfig;
 }
