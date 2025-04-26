@@ -66,7 +66,10 @@ export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
       }
       try {
         const connected = await window.ic.plug.requestConnect({
-          whitelist: this.config.delegationTargets?.map(p => typeof p === 'string' ? p : p.toText()) || [], 
+          whitelist: this.config.delegationTargets
+            ?.filter(p => p != null)
+            .map(p => typeof p === 'string' ? p : p.toText()) 
+            || [], 
           host: this.config.hostUrl, 
           timeout: this.config.adapters?.plug?.config?.timeout || this.config.timeout || 1000 * 60 * 60 * 24 * 7, 
           onConnectionUpdate: () => this.handleConnectionUpdate(),

@@ -1,4 +1,4 @@
-import { d as r, e as o, c as t } from "./index-DehKl7jK.js";
+import { d as r, e as o, c as t } from "./index-BF77lfCT.js";
 import "@dfinity/agent";
 export {
   r as PNP,

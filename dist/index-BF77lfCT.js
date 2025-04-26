@@ -2282,7 +2282,7 @@ const Pu = "data:image/webp;base64,UklGRkw6AABXRUJQVlA4WAoAAAAwAAAAXQEAXQEASUNDU
         throw this.setState(At.Status.ERROR), new Error("Plug Wallet extension not detected.");
       try {
         if (!await window.ic.plug.requestConnect({
-          whitelist: this.config.delegationTargets?.map((i) => typeof i == "string" ? i : i.toText()) || [],
+          whitelist: this.config.delegationTargets?.filter((i) => i != null).map((i) => typeof i == "string" ? i : i.toText()) || [],
           host: this.config.hostUrl,
           timeout: this.config.adapters?.plug?.config?.timeout || this.config.timeout || 6048e5,
           onConnectionUpdate: () => this.handleConnectionUpdate()
@@ -14825,7 +14825,7 @@ class ug {
       if (!Nt(this, Ce, "f")) {
         let t;
         try {
-          t = (await import("./index-DkpRPwnr.js")).default;
+          t = (await import("./index-sWxrK7cS.js")).default;
         } catch {
           throw new Error("Unable to load Solflare MetaMask SDK");
         }
@@ -14973,7 +14973,7 @@ class dg extends ao {
       }
       let t;
       try {
-        t = (await import("./index-s9FC-NyL.js")).default;
+        t = (await import("./index-DYVtVCP8.js")).default;
       } catch (i) {
         throw new il(i?.message, i);
       }
@@ -16026,4 +16026,4 @@ export {
   Fg as e,
   Ei as g
 };
-//# sourceMappingURL=index-DehKl7jK.js.map
+//# sourceMappingURL=index-BF77lfCT.js.map

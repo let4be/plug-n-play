@@ -1,5 +1,5 @@
-import { S as H, a as W, b as k, E as j, P as N, T as K, V as p } from "./index-DehKl7jK.js";
-import { v as P, b as d } from "./v4-BGgSbGUz.js";
+import { S as H, a as W, b as k, E as j, P as N, T as K, V as p } from "./index-BF77lfCT.js";
+import { v as P, b as d } from "./v4-Duvinf9q.js";
 function T(r) {
   return r.version === void 0;
 }
@@ -419,4 +419,4 @@ export {
   C as StandardSolflareMetaMaskWalletAccount,
   I as default
 };
-//# sourceMappingURL=index-DkpRPwnr.js.map
+//# sourceMappingURL=index-sWxrK7cS.js.map
