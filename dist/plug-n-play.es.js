@@ -1,8 +1,7 @@
-import { d as r, e as o, c as t } from "./index-BF77lfCT.js";
+import { v, w, u } from "./index-9Rmuwpsp.js";
 import "@dfinity/agent";
 export {
-  r as PNP,
-  o as createPNP,
-  t as createPNPConfig
+  v as PNP,
+  w as createPNP,
+  u as createPNPConfig
 };
-//# sourceMappingURL=plug-n-play.es.js.map

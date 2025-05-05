@@ -2,13 +2,16 @@ import { Principal } from "@dfinity/principal";
 import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
 import { DelegationIdentity, Ed25519KeyIdentity } from "@dfinity/identity";
 import { type Wallet, Adapter } from "../../types/index.d";
-import nfidLogo from "../../../assets/nfid.webp";
 import { PostMessageTransport } from "@slide-computer/signer-web";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
 import { SignerError } from "@slide-computer/signer";
-import { AccountIdentifier } from "@dfinity/ledger-icp";
 import { BaseIcAdapter } from "./BaseIcAdapter"; // Add BaseIcAdapter import
+import { 
+  createAccountFromPrincipal, 
+  isPrincipalAnonymous,
+  fetchRootKeysIfNeeded
+} from "./icUtils"; // Import utility functions
 
 // Extend BaseIcAdapter instead of just implementing Adapter.Interface
 export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
@@ -27,22 +30,12 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
   private signer: Signer | null;
   private transport: PostMessageTransport | null;
 
-  // Defaults
-  static readonly logo: string = nfidLogo;
-  static readonly walletName: string = "NFID";
-  walletName: string = NFIDAdapter.walletName;
-  logo: string = NFIDAdapter.logo;
-  url: string;
-
-  constructor(config: Wallet.PNPConfig) {
-    super(config); // Call BaseIcAdapter constructor
-    const nfidInfo = this.config.adapters?.['nfid'] as Adapter.Info | undefined;
-    // Provide a default URL if none is found in the config
-    this.url = nfidInfo?.rpcUrl ?? "https://nfid.one/rpc"; // Default NFID RPC endpoint
+  constructor(args: Adapter.ConstructorArgs) {
+    super(args); // Call BaseIcAdapter constructor with args
 
     // Create transport with the configured URL and non-click detection disabled
     this.transport = new PostMessageTransport({
-      url: this.url,
+      url: this.adapter.config.signerUrl,
       ...NFIDAdapter.TRANSPORT_CONFIG,
     });
 
@@ -52,7 +45,7 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
     });
 
     // Agent interacting with the Signer/NFID uses the provider URL
-    const signerHttpAgent = HttpAgent.createSync({ host: this.url });
+    const signerHttpAgent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
 
     this.signerAgent = SignerAgent.createSync({
       signer: this.signer,
@@ -61,7 +54,7 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
     });
 
     // General purpose agent for non-signed/initial actions
-    this.agent = HttpAgent.createSync({ host: this.url });
+    this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
 
     this.setState(Adapter.Status.READY); // Use inherited setState
   }
@@ -110,17 +103,17 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
 
       // maxTimeToLive is expected in nanoseconds from Date.now() epoch
       const maxTimeToLiveNs =
-        this.config.delegationTimeout !== undefined
+        this.adapter.config.delegationTimeout !== undefined // Access global config
           ? BigInt(Date.now() * 1_000_000) +
-            BigInt(this.config.delegationTimeout) // Convert Date.now() (ms) to ns and add timeout (ns)
+            BigInt(this.adapter.config.delegationTimeout) // Convert Date.now() (ms) to ns and add timeout (ns)
           : BigInt(Date.now() * 1_000_000) +
             BigInt(48 * 60 * 60 * 1_000_000_000); // Default: Now + 24h in ns
 
       // This call will prompt the user if necessary or use existing session
       const delegationChain = await this.signer.delegation({
         publicKey: this.sessionKey.getPublicKey().toDer(),
-        targets: Array.isArray(this.config.delegationTargets) 
-          ? this.config.delegationTargets
+        targets: Array.isArray(this.adapter.config.delegationTargets) // Access global config
+          ? this.adapter.config.delegationTargets
               .filter((target): target is string => typeof target === 'string' && target.length > 0)
               .map(target => Principal.fromText(target))
           : [],
@@ -136,18 +129,18 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
       this.signerAgent = SignerAgent.createSync({
         signer: this.signer,
         account: delegationIdentity.getPrincipal(),
-        agent: HttpAgent.createSync({ host: this.url }), // Use RPC URL for the signer agent
+        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }), // Use RPC URL for the signer agent
       });
 
       this.identity = delegationIdentity;
 
-      if (this.config.fetchRootKeys) {
-        await this.agent.fetchRootKey();
+      if (this.adapter.config.fetchRootKeys) { // Access global config
+        await fetchRootKeysIfNeeded(this.agent, true);
       }
 
       const principal = delegationIdentity.getPrincipal();
 
-      if (principal.isAnonymous()) {
+      if (isPrincipalAnonymous(principal)) {
         this.setState(Adapter.Status.READY);
         // Clear potentially invalid state
         this.identity = null;
@@ -159,13 +152,7 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
       }
 
       this.setState(Adapter.Status.CONNECTED);
-      return {
-        owner: principal.toText(),
-        subaccount: AccountIdentifier.fromPrincipal({
-          principal,
-          subAccount: undefined, // This will use the default subaccount
-        }).toHex(),
-      };
+      return createAccountFromPrincipal(principal);
     } catch (error) {
       // Attempt cleanup on error
       this.identity = null;
@@ -186,8 +173,8 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
   undelegatedActor<T>(canisterId: string, idlFactory: any): ActorSubclass<T> {
     const agent = HttpAgent.createSync({
       identity: this.identity,
-      host: this.config.hostUrl,
-      verifyQuerySignatures: this.config.verifyQuerySignatures,
+      host: this.adapter.config.hostUrl, // Access global hostUrl
+      verifyQuerySignatures: this.adapter.config.verifyQuerySignatures, // Access global verifyQuerySignatures
     });
     const actor = Actor.createActor<T>(idlFactory, {
       agent: agent,
@@ -203,15 +190,13 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
     options?: { requiresSigning?: boolean }
   ): ActorSubclass<T> {
     const requiresSigning = options?.requiresSigning !== false; // Default to true
-
-    // Add null checks for potentially null properties
     if (!this.identity) {
       throw new Error("Not connected. Identity not available.");
     }
     if (!this.signerAgent && requiresSigning) {
       throw new Error("Signer agent not available. Please connect first.");
     }
-    if (!this.config.hostUrl) {
+    if (!this.adapter.config.hostUrl) {
       throw new Error("Host URL configuration is missing.");
     }
 

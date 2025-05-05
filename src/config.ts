@@ -1,9 +1,18 @@
-import { Adapter } from './types';
-import { ICAdapters } from './adapters/ic'; // Removed defaultICAdapterConfigs import
-import { SolAdapters } from './adapters/sol'; // Added import for SolAdapters
+import { Adapter } from "./types";
+import { ICAdapters } from "./adapters/ic"; // Removed defaultICAdapterConfigs import
+import { SolAdapters } from "./adapters/sol"; // Added import for SolAdapters
+import { GlobalPnpConfig } from ".";
+
+// Type for user-provided adapter overrides
+// Allows overriding top-level metadata (enabled, name, logo) and specific config properties.
+// Also allows passing adapter-specific properties (like projectId) directly.
+type AdapterUserOverride = Partial<Omit<Adapter.Config, 'id' | 'adapter' | 'config'>> & {
+  config?: Partial<Adapter.Config['config']>;
+  [key: string]: any; // Allows arbitrary keys like projectId, appName etc.
+};
 
 // Main configuration for the PNP library
-export interface PNPConfig {
+export interface CreatePnpArgs {
   dfxNetwork?: string; // Useful for determining dev environment
   hostUrl?: string;
   delegationTimeout?: bigint;
@@ -13,26 +22,23 @@ export interface PNPConfig {
   verifyQuerySignatures?: boolean; // Common agent setting
   localStorageKey?: string;
   siwsProviderCanisterId?: string; // Add SIWS provider Canister ID here
-  // Allow partial overrides for Adapter.Info, including its nested config
-  adapters?: { [key: string]: Partial<Omit<Adapter.Info, 'config'>> & { config?: Partial<Adapter.Info['config']> } };
+  adapters?: {
+    [key: string]: AdapterUserOverride; // Use the override type here
+  };
 }
 
 // Default values for the main configuration
-// Update the type to reflect that 'adapters' now holds config and removed adapterConfigs
-export const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters' | 'siwsProviderCanisterId'>> & {
-  adapters: Record<string, Adapter.Info>; // 'adapters' now holds the complete, configured adapter info
-  siwsProviderCanisterId: string | undefined; // Add default value type
-} = {
-  // Global defaults
+export const defaultCreateArgs = {
+  // Global defaults matching user's updated PnpConfig
+  dfxNetwork: "ic",
   hostUrl: "https://icp0.io",
   delegationTimeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
   delegationTargets: [],
-  derivationOrigin: typeof window !== 'undefined' ? window.location.origin : "", // Default to browser origin
-  dfxNetwork: "ic",
-  fetchRootKeys: false,
-  verifyQuerySignatures: true,
+  derivationOrigin: typeof window !== "undefined" ? window.location.origin : "",
+  fetchRootKeys: false, // Default for global setting
+  verifyQuerySignatures: true, // Default for global setting
   localStorageKey: "pnpConnectedWallet",
-  siwsProviderCanisterId: undefined, // Default to undefined
+  siwsProviderCanisterId: undefined,
   adapters: {
     ...ICAdapters,
     ...SolAdapters, // Merge SolAdapters into the defaults
@@ -40,53 +46,81 @@ export const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters' | 'siwsProvid
 };
 
 // Define the return type more explicitly to include adapters (which now contain config)
-export type FullPNPConfig = typeof defaultPNPConfig;
+export type FullPNPConfig = typeof defaultCreateArgs;
 
 // Function to create a complete configuration object by merging user input with defaults
-export function createPNPConfig(config: PNPConfig = {}): FullPNPConfig { 
-  const mergedAdapters = { ...defaultPNPConfig.adapters };
+export function createPNPConfig(config: CreatePnpArgs = {}): GlobalPnpConfig {
+  const finalAdapters: Record<string, Adapter.Config> = {};
 
-  if (config.adapters) {
-    for (const adapterId in config.adapters) {
-      const userAdapterOverride = config.adapters[adapterId];
-      if (!userAdapterOverride) continue; // Skip if override is null/undefined
+  // Iterate over the DEFAULT adapters defined in ICAdapters and SolAdapters
+  for (const adapterId in defaultCreateArgs.adapters) {
+      const defaultAdapterInfo = defaultCreateArgs.adapters[adapterId];
+      const userAdapterOverride = config.adapters?.[adapterId]; // This is now of type AdapterUserOverride | undefined
 
-      const defaultAdapterInfo = mergedAdapters[adapterId];
+      if (!defaultAdapterInfo) continue; // Skip if somehow iterating a key not in defaults
 
-      if (!defaultAdapterInfo) {
-        // Handle case where user provides an adapter ID not in defaults
-        console.warn(`[PNP Config] Adapter ID '${adapterId}' provided by user not found in defaults. Skipping merge for this adapter.`);
-        // Optionally, you could attempt to construct a default-less adapter info here,
-        // but it's safer to warn and potentially skip if the base adapter is unknown.
-        continue;
-      }
+      // Start building the final config for this adapter
+      const finalAdapterConfig: Adapter.Config = {
+          // Start with the default metadata (id, walletName, logo, adapter constructor)
+          ...defaultAdapterInfo,
 
-      // Perform a more robust merge
-      mergedAdapters[adapterId] = {
-        // Start with default Adapter.Info properties (id, logo, name, adapter constructor)
-        ...defaultAdapterInfo,
-        // Override top-level Adapter.Info properties from user (like enabled)
-        // Use nullish coalescing to ensure user's value is taken if provided
-        id: userAdapterOverride.id ?? defaultAdapterInfo.id,
-        logo: userAdapterOverride.logo ?? defaultAdapterInfo.logo,
-        walletName: userAdapterOverride.walletName ?? defaultAdapterInfo.walletName,
-        adapter: userAdapterOverride.adapter ?? defaultAdapterInfo.adapter,
-        enabled: userAdapterOverride.enabled ?? defaultAdapterInfo.enabled,
-        // Deep merge the 'config' object explicitly
-        config: {
-          ...defaultAdapterInfo.config,      // Start with default config
-          ...(userAdapterOverride.config), // Override with user's partial config
-        },
+          // Override 'enabled' status if provided by user, otherwise use default
+          enabled: userAdapterOverride?.enabled ?? defaultAdapterInfo.enabled,
+
+          // Build the nested 'config' object
+          config: {
+              // 1. Start with the default adapter's config
+              ...defaultAdapterInfo.config,
+
+              // 2. Apply global overrides from the main config object
+              hostUrl: config.hostUrl || defaultCreateArgs.hostUrl,
+              // Use nullish coalescing (??) for booleans to allow 'false' override
+              fetchRootKeys: config.fetchRootKeys ?? defaultCreateArgs.fetchRootKeys,
+              verifyQuerySignatures: config.verifyQuerySignatures ?? defaultCreateArgs.verifyQuerySignatures,
+              delegationTimeout: config.delegationTimeout || defaultCreateArgs.delegationTimeout,
+              delegationTargets: config.delegationTargets || defaultCreateArgs.delegationTargets,
+              derivationOrigin: config.derivationOrigin || defaultCreateArgs.derivationOrigin,
+              localStorageKey: config.localStorageKey || defaultCreateArgs.localStorageKey,
+              // Merge global SIWS ID if provided, otherwise use default adapter config's value (if any) or default global
+              siwsProviderCanisterId: config.siwsProviderCanisterId || defaultAdapterInfo.config?.siwsProviderCanisterId || defaultCreateArgs.siwsProviderCanisterId,
+
+              // 3. Apply adapter-specific overrides provided DIRECTLY by the user (e.g., projectId, appName)
+              // Filter out 'enabled' and 'config' as they are handled separately/next
+              ...Object.fromEntries(
+                Object.entries(userAdapterOverride || {}).filter(
+                  ([key]) => key !== 'enabled' && key !== 'config'
+                )
+              ),
+
+              // 4. Apply overrides provided WITHIN the user's 'config' object (highest precedence for specific config keys)
+              ...(userAdapterOverride?.config || {}),
+          },
       };
-    }
+
+      // Allow overriding top-level metadata like walletName, logo, etc. if user provided them
+      if (userAdapterOverride?.walletName) finalAdapterConfig.walletName = userAdapterOverride.walletName;
+      if (userAdapterOverride?.logo) finalAdapterConfig.logo = userAdapterOverride.logo;
+      if (userAdapterOverride?.website) finalAdapterConfig.website = userAdapterOverride.website;
+      // chain and id are generally fixed by the default config
+
+      finalAdapters[adapterId] = finalAdapterConfig;
   }
 
-  // Merge global settings: User's global settings override defaults
-  const mergedConfig: FullPNPConfig = {
-    ...defaultPNPConfig,
-    ...config,
-    adapters: mergedAdapters, // Use the adapters map with refined merging
+  // Final global config structure
+  const finalGlobalConfig: GlobalPnpConfig = {
+    // Global settings merged from user input and defaults
+    dfxNetwork: config.dfxNetwork || defaultCreateArgs.dfxNetwork,
+    hostUrl: config.hostUrl || defaultCreateArgs.hostUrl,
+    delegationTimeout: config.delegationTimeout || defaultCreateArgs.delegationTimeout,
+    delegationTargets: config.delegationTargets || defaultCreateArgs.delegationTargets,
+    derivationOrigin: config.derivationOrigin || defaultCreateArgs.derivationOrigin,
+    fetchRootKeys: config.fetchRootKeys ?? defaultCreateArgs.fetchRootKeys,
+    verifyQuerySignatures: config.verifyQuerySignatures ?? defaultCreateArgs.verifyQuerySignatures,
+    localStorageKey: config.localStorageKey || defaultCreateArgs.localStorageKey,
+    siwsProviderCanisterId: config.siwsProviderCanisterId || defaultCreateArgs.siwsProviderCanisterId,
+    // The processed adapters map
+    adapters: finalAdapters,
   };
-
-  return mergedConfig;
+  
+  return finalGlobalConfig;
 }

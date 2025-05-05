@@ -1,45 +1,32 @@
 import { writable, get } from 'svelte/store';
 import { Principal } from '@dfinity/principal';
-import { pnpInstance, principalId } from './pnp';
-import { ICRC2_IDL } from '../idls/icrc2.idl';
-import type { ActorSubclass } from '@dfinity/agent';
-
-// Define the expected interface for the ICRC2 actor
-interface ICRC2Account {
-  owner: Principal;
-  subaccount?: Uint8Array;
-}
-
-interface ICRC2Actor extends ActorSubclass<any> {
-  icrc1_balance_of: (args: ICRC2Account) => Promise<bigint>;
-}
-
-// ICP Ledger canister ID
-const LEDGER_CANISTER_ID = 'ryjl3-tyaaa-aaaaa-aaaba-cai';
+import { pnpInstance } from './pnp';
+import { idlFactory as ledgerIdlFactory, canisterId as ledgerCanisterId } from '../idls/ksicp_ledger';
+import { type _SERVICE as LedgerService } from '../idls/ksicp_ledger/ksicp_ledger.did';
 
 export const balance = writable<bigint | null>(null);
 
 export const fetchBalance = async () => {
-  const pnp = get(pnpInstance);
-  const owner = get(principalId);
+  const auth = get(pnpInstance);
   
-  if (!pnp) {
+  if (!auth) {
     throw new Error('PNP not initialized');
   }
   
-  if (!owner) {
+  if (!auth.account.owner) {
     throw new Error('No principal ID available');
   }
 
   try {
-    const actor = await pnp.getActor<ICRC2Actor>(
-      LEDGER_CANISTER_ID, 
-      ICRC2_IDL,
-      { anon: false, requiresSigning: false } 
-    );
+    const actor = auth.getActor<LedgerService>({
+      canisterId: ledgerCanisterId, 
+      idl: ledgerIdlFactory,
+      anon: true 
+    });
     
     const result = await actor.icrc1_balance_of({
-      owner: owner,
+      owner: Principal.fromText(auth.account.owner),
+      subaccount: [],
     });
     console.log('Fetched balance:', result);
     balance.set(result);

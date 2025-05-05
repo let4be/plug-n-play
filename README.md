@@ -7,7 +7,7 @@ Plug N Play simplifies the integration of Internet Computer wallets into your de
 - Seamless integration with multiple Internet Computer wallets
 - Simplified wallet connection, disconnection, and other functions
 - Supports ICRC wallet standards
-- Experimental support for Sign-In with Solana (SIWS) via Phantom and Solflare
+- Experimental support for Sign-In with Solana (SIWS) via Phantom, Solflare, and WalletConnect
 - Lightweight and easy to use
 
 ## Supported Wallets
@@ -18,6 +18,7 @@ Plug N Play simplifies the integration of Internet Computer wallets into your de
 - Oisy
 - Phantom (SIWS)
 - Solflare (SIWS)
+- WalletConnect (SIWS)
 - More to be added
 
 ## Installation
@@ -36,6 +37,8 @@ Install required peer dependencies for SIWS (if using SIWS adapters):
 
 ```bash
 pnpm add @solana/wallet-adapter-base @solana/wallet-adapter-phantom @solana/wallet-adapter-solflare @solana/web3.js bs58
+# For WalletConnect support, also add:
+pnpm add @solana/wallet-adapter-walletconnect
 ```
 
 ## Basic Usage
@@ -107,13 +110,28 @@ const pnp = createPNP({
         solanaNetwork: WalletAdapterNetwork.Devnet,
       },
     },
+    walletconnectSiws: { // WalletConnect support
+      enabled: true, // Must be explicitly enabled
+      config: {
+        // --- Required SIWS Config ---
+        siwsProviderCanisterId: "YOUR_SIWS_PROVIDER_CANISTER_ID",
+        // --- Required WalletConnect Config ---
+        walletConnectProjectId: "YOUR_WALLETCONNECT_PROJECT_ID", // Get from cloud.walletconnect.com
+        // --- Optional Config ---
+        solanaNetwork: WalletAdapterNetwork.Mainnet,
+        appName: "Your App Name",
+        appDescription: "Your app description",
+        appUrl: "https://yourapp.com",
+        appIcons: ["https://yourapp.com/logo.png"],
+      },
+    },
   },
 });
 
 // Get the list of enabled wallets AFTER initialization
 const availableWallets = pnp.getEnabledWallets();
 console.log("Available wallets:", availableWallets);
-// Returns an array of Adapter.Info objects for enabled wallets
+// Returns an array of Adapter.Config objects for enabled wallets
 
 // Connect to a wallet (works for both IC and SIWS wallets)
 async function connectWallet(walletId: string) {
@@ -158,12 +176,17 @@ async function disconnectWallet() {
 
 ## Sign-In with Solana (SIWS) Configuration
 
-The SIWS adapters (`phantomSiws`, `solflareSiws`) allow users to authenticate with their Internet Computer application using their Solana wallet.
+The SIWS adapters (`phantomSiws`, `solflareSiws`, `walletconnectSiws`) allow users to authenticate with their Internet Computer application using their Solana wallet.
 
 **Important:** These adapters require specific configuration:
 
 1.  **`siwsProviderCanisterId` (Required):** The canister ID of your deployed [IC SIWS Provider canister](https://github.com/kristoferlund/ic-siws-provider). This canister handles the SIWS verification flow on the IC. The PNP library uses the standard IDL for this canister internally.
 2.  **`solanaNetwork` (Optional):** The Solana network to use (`WalletAdapterNetwork.Mainnet` or `WalletAdapterNetwork.Devnet`). Defaults to `Mainnet`.
+3.  **For WalletConnect specifically:**
+    - **`walletConnectProjectId` (Required):** A project ID from [WalletConnect Cloud](https://cloud.walletconnect.com/).
+    - **`appName`, `appDescription`, `appUrl`, `appIcons` (Optional):** Metadata for your application that will be shown to users when connecting their wallets.
+
+For more details on using WalletConnect, see the [WalletConnect documentation](docs/walletconnect.md).
 
 Make sure you have installed the necessary peer dependencies for the Solana wallet adapters as shown in the [Installation](#installation) section.
 
@@ -218,6 +241,7 @@ async function transfer(to: string, amount: bigint) {
 5.  Clean up resources by calling `disconnect` when the user logs out or closes the application session.
 6.  For local development, ensure `hostUrl`, `fetchRootKeys`, `verifyQuerySignatures`, and adapter-specific settings (like II `identityProvider`) are configured correctly for your local replica.
 7.  When using SIWS adapters, ensure the required peer dependencies are installed and the `siwsProviderCanisterId` and `siwsProviderCreateActor` are correctly configured.
+8.  For WalletConnect, always obtain a unique project ID from WalletConnect Cloud and provide it in your configuration.
 
 ## License
 

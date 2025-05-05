@@ -1,12 +1,16 @@
 import { Principal } from "@dfinity/principal";
 import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
 import { type Wallet, Adapter } from "../../types/index.d";
-import oisyLogo from "../../../assets/oisy_logo.webp";
 import { PostMessageTransport } from "@slide-computer/signer-web";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
-import { AccountIdentifier } from "@dfinity/ledger-icp";
 import { BaseIcAdapter } from "./BaseIcAdapter";
+import { 
+  deriveAccountId, 
+  createAccountFromPrincipal, 
+  isValidPrincipal,
+  withRetry 
+} from "./icUtils"; // Import utility functions
 
 export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
   private static readonly TRANSPORT_CONFIG = {
@@ -24,16 +28,11 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
   private signerAgent: SignerAgent<Signer> | null = null;
   private transport: PostMessageTransport | null = null;
 
-  static readonly logo: string = oisyLogo;
-  static readonly walletName: string = "OISY Wallet";
-  walletName: string = OisyAdapter.walletName;
-  logo: string = OisyAdapter.logo;
+  constructor(args: Adapter.ConstructorArgs) {
+    super(args);
 
-  constructor(config: Wallet.PNPConfig) {
-    super(config);
-
-    const signerUrl = this.config.adapters?.oisy?.config?.signerUrl || "https://oisy.com/sign";    
-    this.agent = HttpAgent.createSync({ host: this.config.hostUrl });
+    const signerUrl = this.adapter.config.signerUrl ?? "https://oisy.com/sign";
+    this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
     
     this.transport = new PostMessageTransport({
       url: signerUrl,
@@ -62,8 +61,8 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
   async getPrincipal(): Promise<string> {
     if (!this.signerAgent) {
       // If we have existing transport and signer but missing signerAgent, recreate only what's needed
-      if (this.transport && this.signer) {
-        this.agent = HttpAgent.createSync({ host: this.config.hostUrl });
+      if (this.transport && this.signer && this.adapter.config.hostUrl) {
+        this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
         this.signerAgent = SignerAgent.createSync({
           signer: this.signer,
           account: Principal.anonymous(),
@@ -77,19 +76,18 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
     return principal.toText();
   }
 
+  // Override the base class method with a specific implementation
   async getAccountId(): Promise<string> {
-    return AccountIdentifier.fromPrincipal({
-      principal: Principal.fromText(await this.getPrincipal()),
-      subAccount: undefined, // This will use the default subaccount
-    }).toHex();
+    const principal = await this.getPrincipal();
+    return deriveAccountId(principal);
   }
 
   async connect(): Promise<Wallet.Account> {
     this.setState(Adapter.Status.CONNECTING);
     try {
       // If we don't have a signerAgent but we have transport and signer, recreate signerAgent only
-      if (!this.signerAgent && this.transport && this.signer) {
-        this.agent = HttpAgent.createSync({ host: this.config.hostUrl });
+      if (!this.signerAgent && this.transport && this.signer && this.adapter.config.hostUrl) {
+        this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
         this.signerAgent = SignerAgent.createSync({
           signer: this.signer,
           account: Principal.anonymous(),
@@ -102,21 +100,18 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
       let principal: Principal;
       const storedPrincipal = localStorage.getItem(OisyAdapter.OISY_PRINCIPAL_KEY);
 
-      if (storedPrincipal && storedPrincipal !== "null" && storedPrincipal !== "undefined") {
-        console.debug("[Oisy] Attempting to use stored principal:", storedPrincipal);
+      if (storedPrincipal && isValidPrincipal(storedPrincipal)) {
         try {
           principal = Principal.fromText(storedPrincipal);
           // Assume the stored principal is valid for now to avoid the popup.
           // If it's invalid, subsequent agent operations will likely fail.
           this.signerAgent.replaceAccount(principal);
-          console.debug("[Oisy] Replaced account with stored principal.");
         } catch (e) {
-          console.warn("[Oisy] Failed to parse stored principal, proceeding with normal flow:", e);
           localStorage.removeItem(OisyAdapter.OISY_PRINCIPAL_KEY);
           // Fall through to normal connection flow if parsing fails
           const accounts = await this.signerAgent.signer.accounts();
           if (!accounts || accounts.length === 0) {
-            this.disconnect();
+            await this.disconnect();
             throw new Error("No accounts returned from Oisy");
           }
           principal = accounts[0].owner;
@@ -124,9 +119,9 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
           this.signerAgent.replaceAccount(principal); // Ensure agent has the correct account even after fallback
         }
       } else {
-        const accounts = await this.signerAgent.signer.accounts();
+        const accounts = await withRetry(() => this.signerAgent!.signer.accounts());
         if (!accounts || accounts.length === 0) {
-          this.disconnect();
+          await this.disconnect();
           throw new Error("No accounts returned from Oisy");
         }
 
@@ -139,19 +134,19 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
 
       if (principal.isAnonymous()) {
         this.setState(Adapter.Status.READY);
-        throw new Error("Failed to authenticate with Oisy - got anonymous principal");
+        throw new Error(
+          "Failed to authenticate with Oisy - got anonymous principal"
+        );
       }
 
-      if (this.config.fetchRootKeys) {
+      if (this.adapter.config.fetchRootKeys) {
         if (!this.signerAgent) throw new Error("Signer agent not ready for fetchRootKeys");
+        // Direct call to fetchRootKey for Signer Agent
         await this.signerAgent.fetchRootKey();
       }
       
       this.setState(Adapter.Status.CONNECTED);
-      return {
-        owner: principal.toText(),
-        subaccount: await this.getAccountId(),
-      };
+      return createAccountFromPrincipal(principal);
     } catch (error) {
       console.error("[Oisy] Connection error:", error);
       await this.disconnect();
@@ -183,15 +178,13 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
   protected async disconnectInternal(): Promise<void> {
     if (this.signer) {
       try {
-        console.debug("[Oisy] Closing signer channel");
         this.signer.closeChannel();
       } catch (error) {
-        console.debug("[Oisy] Error closing signer channel:", error);
+        console.warn("[Oisy] Error closing signer channel:", error);
       }
     }
     // Clear stored principal on disconnect
     localStorage.removeItem(OisyAdapter.OISY_PRINCIPAL_KEY);
-    console.debug("[Oisy] Cleared stored principal from localStorage.");
   }
 
   protected cleanupInternal(): void {

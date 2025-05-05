@@ -1,5 +1,10 @@
 import { Adapter } from './types';
-export interface PNPConfig {
+import { GlobalPnpConfig } from '.';
+type AdapterUserOverride = Partial<Omit<Adapter.Config, 'id' | 'adapter' | 'config'>> & {
+    config?: Partial<Adapter.Config['config']>;
+    [key: string]: any;
+};
+export interface CreatePnpArgs {
     dfxNetwork?: string;
     hostUrl?: string;
     delegationTimeout?: bigint;
@@ -10,14 +15,23 @@ export interface PNPConfig {
     localStorageKey?: string;
     siwsProviderCanisterId?: string;
     adapters?: {
-        [key: string]: Partial<Omit<Adapter.Info, 'config'>> & {
-            config?: Partial<Adapter.Info['config']>;
-        };
+        [key: string]: AdapterUserOverride;
     };
 }
-export declare const defaultPNPConfig: Required<Omit<PNPConfig, 'adapters' | 'siwsProviderCanisterId'>> & {
-    adapters: Record<string, Adapter.Info>;
-    siwsProviderCanisterId: string | undefined;
+export declare const defaultCreateArgs: {
+    dfxNetwork: string;
+    hostUrl: string;
+    delegationTimeout: bigint;
+    delegationTargets: any[];
+    derivationOrigin: string;
+    fetchRootKeys: boolean;
+    verifyQuerySignatures: boolean;
+    localStorageKey: string;
+    siwsProviderCanisterId: any;
+    adapters: {
+        [x: string]: Adapter.Config;
+    };
 };
-export type FullPNPConfig = typeof defaultPNPConfig;
-export declare function createPNPConfig(config?: PNPConfig): FullPNPConfig;
+export type FullPNPConfig = typeof defaultCreateArgs;
+export declare function createPNPConfig(config?: CreatePnpArgs): GlobalPnpConfig;
+export {};

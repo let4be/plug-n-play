@@ -1,27 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
 import { createPNP, type PNP, type Wallet, type Adapter, type ActorSubclass } from '../../../../../src'; // Keep relative path for now
-import type { Principal } from '@dfinity/principal';
-
-// Import available wallets directly from the PNP instance after initialization
-// export const availableWallets = walletsList; // Remove this, get from instance
-
-// Remove the local PNP interface definition, use the imported one
-/*
-interface PNP {
-    account: Wallet.Account | null;
-    activeWallet: Adapter.Info | null;
-    provider: Adapter.Interface | null;
-    config: Wallet.PNPConfig;
-    actorCache: Map<string, ActorSubclass<any>>;
-    fetchRootKeys: boolean;
-    getActor: <T>(canisterId: string, idl: any, isAnon?: boolean) => Promise<ActorSubclass<T>>;
-    connect: (walletId: string) => Promise<Wallet.Account>;
-    disconnect: () => Promise<void>;
-    isWalletConnected: () => Promise<boolean>;
-    createAnonymousActor: <T>(canisterId: string, idl: any, options?: { requiresSigning?: boolean }) => Promise<ActorSubclass<T>>;
-    getAdapter: (walletId: string) => Adapter.Interface;
-}
-*/
 
 // Create stores
 export const selectedWalletId = writable<string | null>(null);

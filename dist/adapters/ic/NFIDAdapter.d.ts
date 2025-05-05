@@ -9,12 +9,7 @@ export declare class NFIDAdapter extends BaseIcAdapter implements Adapter.Interf
     private signerAgent;
     private signer;
     private transport;
-    static readonly logo: string;
-    static readonly walletName: string;
-    walletName: string;
-    logo: string;
-    url: string;
-    constructor(config: Wallet.PNPConfig);
+    constructor(args: Adapter.ConstructorArgs);
     isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;

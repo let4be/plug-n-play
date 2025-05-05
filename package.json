@@ -1,6 +1,6 @@
 {
   "name": "@windoge98/plug-n-play",
-  "version": "0.0.61-siws-1",
+  "version": "0.0.61-siws-9",
   "description": "Wallet wrapper/adapter for connecting different wallets on the Internet Computer",
   "module": "dist/plug-n-play.es.js",
   "main": "dist/index.js",
@@ -49,6 +49,7 @@
     "@solana/wallet-adapter-coinbase": "^0.1.21",
     "@solana/wallet-adapter-phantom": "^0.9.25",
     "@solana/wallet-adapter-solflare": "^0.6.29",
+    "@solana/wallet-adapter-walletconnect": "0.1.20",
     "@solana/web3.js": "^1.98.0",
     "bs58": "^6.0.0",
     "localforage": "^1.10.0"

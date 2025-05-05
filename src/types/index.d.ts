@@ -7,65 +7,77 @@ import { AnonymousIdentity, HttpAgent } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { ActorSubclass } from "@dfinity/agent";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+import { IIAdapterConfig, SolanaAdapterConfig, OisyAdapterConfig, PlugAdapterConfig, NFIDAdapterConfig } from "./adapterTypes";
 
 declare module "*.jpg";
 declare module "*.jpeg";
 declare module "*.svg";
 
-export namespace Wallet {
-  export interface PNPConfig {
-    hostUrl?: string;
-    localStorageKey?: string;
-    defaultCanisterId?: string;
-    delegationTargets?: Principal[] | string[];
-    delegationTimeout?: bigint;
-    derivationOrigin?: string;
-    dfxNetwork?: string;
-    fetchRootKeys?: boolean;
-    verifyQuerySignatures?: boolean;
-    adapters?: Record<string, Adapter.Info>;
-    identityProvider?: string;
-    timeout?: number;
-  }
+export interface PnpConfig {
+  delegationTargets: string[];
+  delegationTimeout: bigint;
+  derivationOrigin: string;
+  dfxNetwork: string;
+  fetchRootKeys: boolean;
+  hostUrl: string;
+  localStorageKey: string;
+  siwsProviderCanisterId: string;
+  verifyQuerySignatures: boolean;
+}
 
+export namespace Wallet {
   export interface Account {
     subaccount: string | null;
     owner: string | null;
   }
 
-  export type AdapterConstructor = new (config: Wallet.PNPConfig) => Adapter.Interface;
+  export type AdapterConstructor = new (config: PnpConfig) => Adapter.Interface;
 }
 
+
+export type GlobalPnpConfig = {
+  dfxNetwork?: string; // Useful for determining dev environment
+  hostUrl?: string;
+  delegationTimeout?: bigint;
+  delegationTargets?: string[];
+  derivationOrigin?: string;
+  fetchRootKeys?: boolean;
+  verifyQuerySignatures?: boolean;
+  localStorageKey?: string;
+  siwsProviderCanisterId?: string;
+  adapters?: Record<string, Adapter.Config>;
+};
+
 export namespace Adapter {
+
+  export interface ConstructorArgs { 
+    adapter: Adapter.Config;
+    config: GlobalPnpConfig;
+  }
+
+  export interface GetActorOptions {
+    canisterId: string;
+    idl: IDL.InterfaceFactory;
+    anon?: boolean;
+    requiresSigning?: boolean;
+  }
+  
   // deprecated
-  export interface Info {
+  export interface Config {
     id: string;
+    enabled: boolean;
     logo: string;
     walletName: string;
     chain: 'ICP' | 'SOL';
     website?: string;
     adapter: AdapterConstructor;
     config: {
-      identityProvider?: string;
-      signerUrl?: string;
-      rpcUrl?: string;
-      timeout?: number;
-      enabled?: boolean;
-      siwsProviderCanisterId?: string;
-      solanaNetwork?: WalletAdapterNetwork | undefined;
-      solanaRpcUrl?: string;
-      derivationOrigin?: string;
-    };
-    rpcUrl?: string;
-    timeout?: number;
-    enabled?: boolean;
+      [key: string]: any;
+    }
   }
 
   // replaces Info
   export interface Wallet {
-    id: string;
-    logo: string;
-    walletName: string;
     adapter: AdapterConstructor;
   }
 
@@ -115,15 +127,15 @@ export namespace Adapter {
 export class PNP {
   account: Wallet.Account | null;
   provider: Adapter.Interface | null;
-  config: Wallet.PNPConfig;
+  config: PnpConfig;
   actorCache: Map<string, ActorSubclass<any>>;
   fetchRootKeys: boolean;
 
-  constructor(config?: Wallet.PNPConfig);
+  constructor(config?: PnpConfig);
 
   connect(walletId: string): Promise<Wallet.Account>;
   disconnect(): Promise<void>;
-  isWalletConnected(): boolean;
+  isAuthenticated(): boolean;
   getActor<T>(canisterId: string, idl: any, isAnon?: boolean): ActorSubclass<T>;
   createAnonymousActor<T>(
     canisterId: string,

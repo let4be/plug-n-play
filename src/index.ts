@@ -1,80 +1,75 @@
 // Add buffer polyfill for browser environment
 import 'buffer';
 import { Actor, HttpAgent, type ActorSubclass } from "@dfinity/agent";
-import type { Wallet, Adapter } from "./types";
-import { createPNPConfig, type PNPConfig } from "./config";
+import { Wallet, Adapter, GlobalPnpConfig } from "./types/index.d";
+import { createPNPConfig } from "./config";
 
 // Re-export config types and creation function for easier consumption
-export { createPNPConfig, type PNPConfig };
-// Re-export core types
+export { createPNPConfig, type GlobalPnpConfig };
 export type { Wallet, Adapter, ActorSubclass };
 
 // Define the PNP class directly here
-export class PNP {
-  account: Wallet.Account | null = null;
-  activeWallet: Adapter.Info | null = null;
-  provider: Adapter.Interface | null = null;
+export interface PnpInterface {
+  config: GlobalPnpConfig;
+  adapter: Adapter.Config | null;
+  provider: Adapter.Interface | null;
+  account: Wallet.Account | null;
+  actorCache: Map<string, ActorSubclass<any>>;
+  status: Adapter.Status;
+  connect: (walletId?: string) => Promise<Wallet.Account | null>;
+  disconnect: () => Promise<void>;
+  getActor: <T>(options: Adapter.GetActorOptions) => ActorSubclass<T>;
+  isAuthenticated: () => boolean;
+  getEnabledWallets: () => Adapter.Config[];
+}
+
+export class PNP implements PnpInterface {
   config: ReturnType<typeof createPNPConfig>;
+  adapter: Adapter.Config | null = null;
+  provider: Adapter.Interface | null = null;
+  account: Wallet.Account | null = null;
   actorCache: Map<string, ActorSubclass<any>> = new Map();
-  isConnecting: boolean = false;
-  adapters: Record<string, Adapter.Info>;
+  status: Adapter.Status = Adapter.Status.INIT;
 
-  constructor(config: PNPConfig = {}) {
+  constructor(config: GlobalPnpConfig = {}) {
     this.config = createPNPConfig(config);
-    this.adapters = this.config.adapters || {};
-  }
-
-  private getAdapterConfig(adapterId: string): Adapter.Info {
-    return this.config.adapters?.[adapterId];
-  }
-
-  private mergeAdapterConfig(adapterId: string): Wallet.PNPConfig {
-    const specificConfig = this.getAdapterConfig(adapterId);
-    return {
-      ...this.config,
-      ...specificConfig,
-    };
+    this.status = Adapter.Status.READY;
   }
 
   // Helper method to reset connection state
   private _resetState(): void {
     this.account = null;
     this.provider = null;
-    this.activeWallet = null;
+    this.adapter = null;
     this.actorCache.clear();
-    localStorage.removeItem(this.config.localStorageKey);
-    // Note: isConnecting is handled separately in connect/disconnect callers
+    localStorage.removeItem(this.adapter?.config?.localStorageKey);
+    this.status = Adapter.Status.READY;
   }
 
   async connect(walletId?: string): Promise<Wallet.Account | null> {
-    if (this.isConnecting) return null;
-    this.isConnecting = true;
+    if (this.status === Adapter.Status.CONNECTING) return null;
+    this.status = Adapter.Status.CONNECTING;
     let instance: Adapter.Interface | null = null;
 
     try {
       const targetWalletId =
-        walletId || localStorage.getItem(this.config.localStorageKey);
+        walletId || localStorage.getItem(this.adapter?.config?.localStorageKey);
       if (!targetWalletId) return null;
+      if (!this.config.adapters[targetWalletId]) throw new Error(`Invalid adapter id: ${targetWalletId}.`);
 
-      localStorage.setItem(this.config.localStorageKey, targetWalletId);
+      localStorage.setItem(this.adapter?.config?.localStorageKey, targetWalletId);
+      const adapterInfo = this.config.adapters[targetWalletId];
 
-      const adapterInfo = this.adapters[targetWalletId];
-      if (!adapterInfo)
-        throw new Error(
-          `Wallet ${targetWalletId} not found in provided adapters`
-        );
-
-      const adapterConfig = this.mergeAdapterConfig(targetWalletId);
-
-      // Some adapters expect both adapterInfo and config parameters
-      instance = adapterInfo.adapter.length > 1 
-        ? new adapterInfo.adapter(adapterInfo, this.config)
-        : new adapterInfo.adapter(this.config);
+      // Get adapter constructor args
+      instance = new adapterInfo.adapter({
+        adapter: adapterInfo,
+        pnpConfig: this.config
+      });
       const account = await instance.connect();
-
       this.account = account;
-      this.activeWallet = adapterInfo;
+      this.adapter = adapterInfo;
       this.provider = instance;
+      this.status = Adapter.Status.CONNECTED;
       return account;
     } catch (error) {
       console.warn(
@@ -88,44 +83,30 @@ export class PNP {
           console.warn("[PNP] Disconnect error:", disconnectError);
         }
       }
-      this._resetState(); // Use helper method
+      this._resetState();
+      this.status = Adapter.Status.ERROR;
       return null;
-    } finally {
-      this.isConnecting = false; // Still need to reset this flag here
-    }
-  }
-
-  getAdapter(walletId: string): Adapter.Interface {
-    const wallet = this.adapters[walletId];
-    if (!wallet)
-      throw new Error(`Wallet ${walletId} not found in provided adapters`);
-    const adapterConfig = this.mergeAdapterConfig(walletId);
-    return new wallet.adapter(wallet, this.config);
+    } 
   }
 
   async disconnect(): Promise<void> {
-    // isConnecting should logically be false if disconnect is called,
-    // but setting it ensures consistency if called unexpectedly.
-    this.isConnecting = false;
+    this.status = Adapter.Status.DISCONNECTING;
     try {
       if (this.provider) await this.provider.disconnect();
-      this._resetState(); // Use helper method
+      this._resetState();
+      this.status = Adapter.Status.DISCONNECTED;
     } catch (error) {
       console.warn("[PNP] Disconnect error:", error);
-      this._resetState(); // Also use helper method on error
+      this._resetState();
+      this.status = Adapter.Status.ERROR;
     }
-    // No finally block needed for state reset anymore
   }
-
+  
+  // Updated method with better type inference
   getActor<T>(
-    canisterId: string,
-    idl: any,
-    options?: {
-      anon?: boolean;
-      requiresSigning?: boolean;
-    }
+    options: Adapter.GetActorOptions
   ): ActorSubclass<T> {
-    const { anon = false, requiresSigning = true } = options || {};
+    const { canisterId, idl, anon = false, requiresSigning = false } = options;
 
     if (anon) {
       return this.createAnonymousActor<T>(canisterId, idl);
@@ -141,14 +122,14 @@ export class PNP {
   }
 
   createAnonymousActor<T>(canisterId: string, idl: any): ActorSubclass<T> {
-    const cacheKey = `anon-${canisterId}`;
+    const cacheKey = `anon-${canisterId}-${this.adapter?.id}`;
     const cachedActor = this.actorCache.get(cacheKey);
     if (cachedActor) return cachedActor;
 
     const actor = Actor.createActor<T>(idl, {
       agent: HttpAgent.createSync({
         host: this.config.hostUrl,
-        verifyQuerySignatures: this.config.verifyQuerySignatures,
+        verifyQuerySignatures: this.adapter?.config?.verifyQuerySignatures,
       }),
       canisterId,
     });
@@ -157,22 +138,22 @@ export class PNP {
     return actor;
   }
 
-  isWalletConnected(): boolean {
+  isAuthenticated(): boolean {
     return (
-      this.activeWallet !== null &&
+      this.adapter !== null &&
       this.provider !== null &&
-      this.account !== null
+      this.account !== null &&
+      this.status === Adapter.Status.CONNECTED
     );
   }
 
-  getEnabledWallets(): Adapter.Info[] {
-    return Object.values(this.adapters).filter((wallet) => {
-      const adapterConfig = this.config.adapters[wallet.id];
-      // Disabled if explicitly false or not defined (defaults to false implicitly)
-      return adapterConfig?.enabled !== false;
+  getEnabledWallets(): Adapter.Config[] {
+    return Object.values(this.config.adapters).filter((wallet) => {
+      // Check if the adapter is explicitly enabled in its config
+      return wallet?.enabled !== false;
     });
   }
 }
 
 // Export the factory function and wallet list
-export const createPNP = (config: PNPConfig = {}) => new PNP(config);
+export const createPNP = (config: GlobalPnpConfig = {}) => new PNP(config);

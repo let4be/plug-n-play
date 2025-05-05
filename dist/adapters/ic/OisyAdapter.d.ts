@@ -8,11 +8,7 @@ export declare class OisyAdapter extends BaseIcAdapter implements Adapter.Interf
     private agent;
     private signerAgent;
     private transport;
-    static readonly logo: string;
-    static readonly walletName: string;
-    walletName: string;
-    logo: string;
-    constructor(config: Wallet.PNPConfig);
+    constructor(args: Adapter.ConstructorArgs);
     isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;

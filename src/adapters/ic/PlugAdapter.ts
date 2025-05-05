@@ -3,17 +3,17 @@
 import { ActorSubclass } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { Adapter, Wallet } from "../../types/index.d";
-import plugLogo from "../../../assets/plug.webp";
-import { AccountIdentifier } from "@dfinity/ledger-icp";
 import { BaseIcAdapter } from "./BaseIcAdapter";
+import { 
+  deriveAccountId, 
+  handleConnectionError, 
+  createAccountFromPrincipal,
+  createActorCacheKey,
+  withRetry
+} from "./icUtils";
 
 // Extend BaseIcAdapter
 export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
-  static readonly logo: string = plugLogo;
-  static readonly walletName: string = "Plug";
-  walletName: string = PlugAdapter.walletName;
-  logo: string = PlugAdapter.logo;
-
   // Plug specific properties
   private readyState:
     | "NotDetected"
@@ -26,8 +26,8 @@ export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
   // state and config are inherited
 
   // Constructor calls super and does Plug specific initialization
-  constructor(config: Wallet.PNPConfig) {
-    super(config); // Call base constructor
+  constructor(args: Adapter.ConstructorArgs) {
+    super(args); // Call base constructor with args
     this.initPlug();
     this.updateConnectionState();
   }
@@ -66,12 +66,9 @@ export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
       }
       try {
         const connected = await window.ic.plug.requestConnect({
-          whitelist: this.config.delegationTargets
-            ?.filter(p => p != null)
-            .map(p => typeof p === 'string' ? p : p.toText()) 
-            || [], 
-          host: this.config.hostUrl, 
-          timeout: this.config.adapters?.plug?.config?.timeout || this.config.timeout || 1000 * 60 * 60 * 24 * 7, 
+          whitelist: this.adapter.config.delegationTargets?.filter(p => p != null) || [], 
+          host: this.adapter.config.hostUrl, 
+          timeout: this.adapter.config.timeout || 1000 * 60 * 60 * 24 * 7, 
           onConnectionUpdate: () => this.handleConnectionUpdate(),
         });
         if (!connected) {
@@ -93,14 +90,7 @@ export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
     this.setState(Adapter.Status.CONNECTED);
     
     const principal = await this.getPrincipal();
-
-    return {
-      owner: principal,
-      subaccount: AccountIdentifier.fromPrincipal({
-        principal: Principal.fromText(principal),
-        subAccount: undefined,
-      }).toHex(),
-    };
+    return createAccountFromPrincipal(principal);
   }
   
   // disconnect method is inherited, uses disconnectInternal and cleanupInternal

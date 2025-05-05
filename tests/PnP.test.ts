@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import { type Wallet } from '../src/types'; // Corrected path for types
 
 // Define a basic mock config
-const mockConfig: Wallet.PNPConfig = {
+const mockConfig: PnpConfig = {
   hostUrl: "http://localhost:4943",
   verifyQuerySignatures: false,
   fetchRootKeys: false,

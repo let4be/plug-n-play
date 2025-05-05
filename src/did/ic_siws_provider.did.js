@@ -40,6 +40,7 @@ export const idlFactory = ({ IDL }) => {
     'Err' : IDL.Text,
   });
   const SiwsSignature = IDL.Text;
+  const Nonce = IDL.Text;
   const CanisterPublicKey = PublicKey;
   const LoginDetails = IDL.Record({
     'user_canister_pubkey' : CanisterPublicKey,
@@ -71,7 +72,7 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'siws_login' : IDL.Func(
-        [SiwsSignature, Address, SessionKey],
+        [SiwsSignature, Address, SessionKey, Nonce],
         [LoginResponse],
         [],
       ),

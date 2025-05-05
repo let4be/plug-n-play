@@ -1,30 +1,30 @@
-// src/adapters/IIAdapter.ts
+// src/adapters/ic/IIAdapter.ts
 
 import { Actor, HttpAgent, type ActorSubclass, Identity } from "@dfinity/agent";
 import { AuthClient } from "@dfinity/auth-client";
 import { type Wallet, Adapter } from "../../types/index.d";
-import dfinityLogo from "../../../assets/dfinity.webp";
 import { BaseIcAdapter } from "./BaseIcAdapter";
+import { 
+  handleConnectionError, 
+  fetchRootKeysIfNeeded, 
+  createAccountFromPrincipal,
+  isValidPrincipal
+} from "./icUtils"; // Import utility functions
 
 // Extend BaseIcAdapter
 export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
-  static readonly logo: string = dfinityLogo;
-  static readonly walletName: string = "Internet Identity";
-  walletName: string = IIAdapter.walletName;
-  logo: string = IIAdapter.logo;
-  
   // II specific properties
   private authClient: AuthClient | null = null;
   private agent: HttpAgent | null = null;
 
-  // Constructor calls super and does II specific initialization
-  constructor(config: Wallet.PNPConfig) {
-    super(config); // Call base constructor
+  constructor(args: Adapter.ConstructorArgs) {
+    super(args); // Call base constructor with the args object
 
-    // Initialize AuthClient immediately, using this.config
+    // Initialize AuthClient immediately, using nested timeout or fallback
     AuthClient.create({
       idleOptions: {
-        idleTimeout: Number(this.config.adapters?.ii?.config?.timeout || this.config.timeout || 1000 * 60 * 60 * 24),
+        // Use adapter-specific timeout from nested config, else default
+        idleTimeout: Number(this.adapter.config.timeout ?? 1000 * 60 * 60 * 24), // Default 24 hours
         disableDefaultIdleCallback: true,
       },
     }).then(client => {
@@ -38,19 +38,19 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
 
   // Use the resolved config for agent initialization
   private async initAgent(identity: Identity): Promise<void> {    
+    // Agent settings from top-level config and nested adapter config
     this.agent = HttpAgent.createSync({
       identity,
-      host: this.config.hostUrl, 
-      verifyQuerySignatures: this.config.verifyQuerySignatures
+      host: this.adapter.config.hostUrl, 
+      // verifyQuerySignatures comes from the nested adapter config, falling back to global
+      verifyQuerySignatures: this.adapter.config.verifyQuerySignatures
     });
     
-    if (this.config.fetchRootKeys) { 
-      try {
-        await this.agent.fetchRootKey();
-      } catch (e) {
-        console.warn("[II] Unable to fetch root key. Check replica status.", e);
-      }
-    }
+    // Use utility function for fetching root keys if needed
+    await fetchRootKeysIfNeeded(
+      this.agent,
+      this.adapter.config.fetchRootKeys,
+    );
   }
 
   // Implement abstract methods
@@ -68,13 +68,15 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
       }
 
       const isAuthenticated = await this.authClient.isAuthenticated();
-
       if (!isAuthenticated) {
         return new Promise<Wallet.Account>((resolve, reject) => {
           this.authClient!.login({
-            derivationOrigin: this.config.derivationOrigin,
-            identityProvider: this.config.identityProvider, 
-            maxTimeToLive: BigInt(1 * 24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
+            // Read derivationOrigin from nested config or fallback to global top-level
+            derivationOrigin: this.adapter.config.derivationOrigin,
+            // Read identityProvider from nested config
+            identityProvider: this.adapter.config.identityProvider, 
+            // Use timeout from nested config or fallback to default
+            maxTimeToLive: BigInt((this.adapter.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
             onSuccess: () => {
               this._continueLogin()
                 .then(account => {
@@ -97,21 +99,14 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
       this.setState(Adapter.Status.READY);
       return account;
     } catch (error) {
-        // Use the helper method
-        await this._handleConnectError(error, "Connect error");
+        // Use the utility function
+        return handleConnectionError(
+          error, 
+          "Connect error", 
+          (state) => this.setState(state), 
+          () => this.disconnect()
+        );
     }
-  }
-
-  // Helper method for handling errors during connection/login flow
-  private async _handleConnectError(error: unknown, contextMessage: string): Promise<never> {
-      console.error(`[II] ${contextMessage}:`, error);
-      this.setState(Adapter.Status.ERROR);
-      // Attempt to disconnect, but don't let disconnect errors mask the original error
-      await this.disconnect().catch(disconnectError => {
-          console.error("[II] Error during disconnect after handling error:", disconnectError);
-      });
-      // Re-throw the original error to propagate it
-      throw error;
   }
 
   private async _continueLogin(): Promise<Wallet.Account> {
@@ -126,17 +121,16 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
       
       await this.initAgent(identity); 
       
-      // Get the account ID using the base method which derives from principal
-      const accountId = await this.getAccountId();
-      
-      return {
-        owner: principal.toText(),
-        // Use the derived account ID
-        subaccount: accountId,
-      };
+      // Use utility to create account from principal
+      return createAccountFromPrincipal(principal);
     } catch (error) {
-      // Use the helper method
-      await this._handleConnectError(error, "Error during _continueLogin");
+      // Use the utility function
+      return handleConnectionError(
+        error, 
+        "Error during _continueLogin", 
+        (state) => this.setState(state), 
+        () => this.disconnect()
+      );
     }
   }
 
@@ -147,12 +141,15 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
   // Implementation for BaseIcAdapter actor caching
   protected createActorInternal<T>(
     canisterId: string, 
-    idl: any, 
+    idl: any,
+    options: {
+      requiresSigning?: boolean;
+    }
   ): ActorSubclass<T> {
     if (!this.agent) {
       throw new Error("Agent not initialized. Connect first.");
     }
-    return Actor.createActor(idl, {
+    return Actor.createActor<T>(idl, {
       agent: this.agent,
       canisterId,
     });
