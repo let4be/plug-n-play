@@ -71,12 +71,6 @@ async function connectWalletConnect() {
     // Get WalletConnect adapter
     const adapter = await pnp.getAdapter('walletconnectSiws');
     
-    // Check if adapter is available
-    if (!(await adapter.isAvailable())) {
-      console.error("WalletConnect adapter is not available");
-      return;
-    }
-    
     // Connect to the wallet
     const account = await adapter.connect();
 

@@ -3,37 +3,44 @@
 import { Actor, HttpAgent, type ActorSubclass, Identity } from "@dfinity/agent";
 import { AuthClient } from "@dfinity/auth-client";
 import { type Wallet, Adapter } from "../../types/index.d";
-import { BaseIcAdapter } from "./BaseIcAdapter";
+import { BaseAdapter } from "../BaseAdapter";
 import { 
   handleConnectionError, 
   fetchRootKeysIfNeeded, 
   createAccountFromPrincipal,
-  isValidPrincipal
-} from "./icUtils"; // Import utility functions
+} from "../../utils/icUtils"; // Import utility functions
+import { IIAdapterConfig } from '../../types/AdapterConfigs';
+import { isIIAdapterConfig } from '../../types/AdapterConfigs';
 
 // Extend BaseIcAdapter
-export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
+export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.Interface {
   // II specific properties
   private authClient: AuthClient | null = null;
   private agent: HttpAgent | null = null;
 
-  constructor(args: Adapter.ConstructorArgs) {
-    super(args); // Call base constructor with the args object
+  constructor(args: { adapter: any; config: IIAdapterConfig }) {
+    if (!isIIAdapterConfig(args.config)) {
+      throw new Error('Invalid config for IIAdapter');
+    }
+    super(args);
+    this.initializeAuthClient();
+  }
 
-    // Initialize AuthClient immediately, using nested timeout or fallback
-    AuthClient.create({
-      idleOptions: {
-        // Use adapter-specific timeout from nested config, else default
-        idleTimeout: Number(this.adapter.config.timeout ?? 1000 * 60 * 60 * 24), // Default 24 hours
-        disableDefaultIdleCallback: true,
-      },
-    }).then(client => {
+  private async initializeAuthClient(): Promise<void> {
+    try {
+      const client = await AuthClient.create({
+        idleOptions: {
+          idleTimeout: Number(this.config.timeout ?? 1000 * 60 * 60 * 24), // Default 24 hours
+          disableDefaultIdleCallback: true,
+        },
+      });
       this.authClient = client;
       this.authClient.idleManager?.registerCallback?.(() => this.refreshLogin());
-    }).catch(err => {
-        console.error("[II] Failed to create AuthClient:", err);
-        this.setState(Adapter.Status.ERROR); // Use inherited setState
-    });
+    } catch (err) {
+      console.error("[II] Failed to create AuthClient:", err);
+      this.setState(Adapter.Status.ERROR);
+      throw err;
+    }
   }
 
   // Use the resolved config for agent initialization
@@ -41,96 +48,90 @@ export class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
     // Agent settings from top-level config and nested adapter config
     this.agent = HttpAgent.createSync({
       identity,
-      host: this.adapter.config.hostUrl, 
+      host: this.config.hostUrl, 
       // verifyQuerySignatures comes from the nested adapter config, falling back to global
-      verifyQuerySignatures: this.adapter.config.verifyQuerySignatures
+      verifyQuerySignatures: this.config.verifyQuerySignatures
     });
     
     // Use utility function for fetching root keys if needed
     await fetchRootKeysIfNeeded(
       this.agent,
-      this.adapter.config.fetchRootKeys,
+      this.config.fetchRootKeys,
     );
-  }
-
-  // Implement abstract methods
-  async isAvailable(): Promise<boolean> {
-    return true; // Always available
   }
 
   async connect(): Promise<Wallet.Account> {
     try {
       this.setState(Adapter.Status.CONNECTING);
       
+      // Ensure AuthClient is initialized
       if (!this.authClient) {
-         await new Promise(resolve => setTimeout(resolve, 500)); 
-         if (!this.authClient) throw new Error("AuthClient failed to initialize.");
+        await this.initializeAuthClient();
       }
 
-      const isAuthenticated = await this.authClient.isAuthenticated();
+      const isAuthenticated = await this.authClient!.isAuthenticated();
       if (!isAuthenticated) {
         return new Promise<Wallet.Account>((resolve, reject) => {
           this.authClient!.login({
-            // Read derivationOrigin from nested config or fallback to global top-level
-            derivationOrigin: this.adapter.config.derivationOrigin,
-            // Read identityProvider from nested config
-            identityProvider: this.adapter.config.identityProvider, 
-            // Use timeout from nested config or fallback to default
-            maxTimeToLive: BigInt((this.adapter.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
-            onSuccess: () => {
-              this._continueLogin()
-                .then(account => {
-                  this.setState(Adapter.Status.READY);
-                  resolve(account);
-                })
-                .catch(reject);
+            derivationOrigin: this.config.derivationOrigin,
+            identityProvider: this.config.identityProvider, 
+            maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
+            onSuccess: async () => {
+              try {
+                const account = await this._continueLogin();
+                this.setState(Adapter.Status.CONNECTED);
+                resolve(account);
+              } catch (error) {
+                this.setState(Adapter.Status.ERROR);
+                reject(error);
+              }
             },
             onError: (error) => {
               console.error("[II] Login error:", error);
-              this.disconnect().catch(() => {}); // Use inherited disconnect
-              this.setState(Adapter.Status.ERROR); 
-              reject(new Error("II Authentication failed: " + error));
+              this.setState(Adapter.Status.ERROR);
+              reject(new Error(`II Authentication failed: ${error}`));
             },
           });
         });
       }
 
-      const account = await this._continueLogin(); 
-      this.setState(Adapter.Status.READY);
+      const account = await this._continueLogin();
+      this.setState(Adapter.Status.CONNECTED);
       return account;
     } catch (error) {
-        // Use the utility function
-        return handleConnectionError(
-          error, 
-          "Connect error", 
-          (state) => this.setState(state), 
-          () => this.disconnect()
-        );
+      this.setState(Adapter.Status.ERROR);
+      throw error;
     }
   }
 
   private async _continueLogin(): Promise<Wallet.Account> {
-    if (!this.authClient) throw new Error("AuthClient not available in _continueLogin");
+    if (!this.authClient) {
+      throw new Error("AuthClient not available in _continueLogin");
+    }
+
     try {        
       const identity = this.authClient.getIdentity();
+      if (!identity) {
+        throw new Error("No identity available after login");
+      }
+
       const principal = identity.getPrincipal();
-      
       if (principal.isAnonymous()) {
         throw new Error("Login resulted in anonymous principal");
       }
       
-      await this.initAgent(identity); 
+      await this.initAgent(identity);
       
-      // Use utility to create account from principal
-      return createAccountFromPrincipal(principal);
+      const account = await createAccountFromPrincipal(principal);
+      if (!account || !account.owner) {
+        throw new Error("Failed to create valid account from principal");
+      }
+      
+      return account;
     } catch (error) {
-      // Use the utility function
-      return handleConnectionError(
-        error, 
-        "Error during _continueLogin", 
-        (state) => this.setState(state), 
-        () => this.disconnect()
-      );
+      console.error("[II] Error in _continueLogin:", error);
+      this.setState(Adapter.Status.ERROR);
+      throw error;
     }
   }
 

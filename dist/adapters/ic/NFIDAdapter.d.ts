@@ -1,7 +1,8 @@
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../../types/index.d';
-import { BaseIcAdapter } from './BaseIcAdapter';
-export declare class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
+import { BaseAdapter } from '../BaseAdapter';
+import { NFIDAdapterConfig } from '../../types/AdapterConfigs';
+export declare class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
     private static readonly TRANSPORT_CONFIG;
     private agent;
     private identity;
@@ -10,7 +11,6 @@ export declare class NFIDAdapter extends BaseIcAdapter implements Adapter.Interf
     private signer;
     private transport;
     constructor(args: Adapter.ConstructorArgs);
-    isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;
     unwrapResponse: <T extends any>(response: any) => T;

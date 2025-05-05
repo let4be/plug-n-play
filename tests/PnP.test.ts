@@ -45,9 +45,4 @@ describe('IIAdapter', () => {
   it('should not have agent initially', () => {
     expect(adapter['agent']).toBeNull();
   });
-
-  it('should check if the wallet is available', async () => {
-    const available = await adapter.isAvailable();
-    expect(available).toBe(true);
-  });
 });

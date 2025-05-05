@@ -92,10 +92,6 @@ export default defineConfig({
       "buffer",
       "process/browser",
       // Add Solana wallet adapter packages to optimizeDeps
-      "@solana/wallet-adapter-base",
-      "@solana/wallet-adapter-phantom",
-      "@solana/wallet-adapter-solflare",
-      "@solana/wallet-adapter-backpack",
       "@solana/wallet-adapter-walletconnect",
       "@solana/web3.js",
       "@solana/spl-token",
@@ -142,11 +138,6 @@ export default defineConfig({
         ]
       : []),
   ],
-  ssr: {
-    noExternal: [
-      "@dfinity/oisy-wallet-signer",
-    ],
-  },
   // Improve dev server performance
   server: {
     hmr: {

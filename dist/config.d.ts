@@ -6,6 +6,7 @@ type AdapterUserOverride = Partial<Omit<Adapter.Config, 'id' | 'adapter' | 'conf
 };
 export interface CreatePnpArgs {
     dfxNetwork?: string;
+    solanaNetwork?: string;
     hostUrl?: string;
     delegationTimeout?: bigint;
     delegationTargets?: string[];
@@ -20,6 +21,7 @@ export interface CreatePnpArgs {
 }
 export declare const defaultCreateArgs: {
     dfxNetwork: string;
+    solanaNetwork: string;
     hostUrl: string;
     delegationTimeout: bigint;
     delegationTargets: any[];

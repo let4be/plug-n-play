@@ -13,7 +13,7 @@ export const fetchBalance = async () => {
     throw new Error('PNP not initialized');
   }
   
-  if (!auth.account.owner) {
+  if (!auth.account?.owner) {
     throw new Error('No principal ID available');
   }
 
@@ -25,7 +25,7 @@ export const fetchBalance = async () => {
     });
     
     const result = await actor.icrc1_balance_of({
-      owner: Principal.fromText(auth.account.owner),
+      owner: Principal.fromText(auth.account?.owner || ''),
       subaccount: [],
     });
     console.log('Fetched balance:', result);

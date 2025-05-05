@@ -4,15 +4,16 @@ import { type Wallet, Adapter } from "../../types/index.d";
 import { PostMessageTransport } from "@slide-computer/signer-web";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
-import { BaseIcAdapter } from "./BaseIcAdapter";
+import { BaseAdapter } from "../BaseAdapter";
 import { 
   deriveAccountId, 
   createAccountFromPrincipal, 
   isValidPrincipal,
   withRetry 
-} from "./icUtils"; // Import utility functions
+} from "../../utils/icUtils"; // Import utility functions
+import { OisyAdapterConfig } from "../../types/AdapterConfigs";
 
-export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
+export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapter.Interface {
   private static readonly TRANSPORT_CONFIG = {
     windowOpenerFeatures: "width=525,height=705",
     establishTimeout: 45000,
@@ -49,11 +50,7 @@ export class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
       agent: this.agent,
     });
   }
-
-  async isAvailable(): Promise<boolean> {
-    return true; // Oisy is web-based
-  }
-
+  
   async isConnected(): Promise<boolean> {
     return this.agent !== null && this.signer !== null && this.signerAgent !== null;
   }

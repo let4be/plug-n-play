@@ -7,7 +7,7 @@ import { AnonymousIdentity, HttpAgent } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { ActorSubclass } from "@dfinity/agent";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import { IIAdapterConfig, SolanaAdapterConfig, OisyAdapterConfig, PlugAdapterConfig, NFIDAdapterConfig } from "./adapterTypes";
+import { IIAdapterConfig, SolanaAdapterConfig, OisyAdapterConfig, PlugAdapterConfig, NFIDAdapterConfig } from "./AdapterTypes";
 
 declare module "*.jpg";
 declare module "*.jpeg";
@@ -27,16 +27,17 @@ export interface PnpConfig {
 
 export namespace Wallet {
   export interface Account {
-    subaccount: string | null;
     owner: string | null;
+    subaccount: string | null;
   }
 
   export type AdapterConstructor = new (config: PnpConfig) => Adapter.Interface;
 }
 
 
-export type GlobalPnpConfig = {
+export interface GlobalPnpConfig {
   dfxNetwork?: string; // Useful for determining dev environment
+  solanaNetwork?: string;
   hostUrl?: string;
   delegationTimeout?: bigint;
   delegationTargets?: string[];
@@ -45,8 +46,14 @@ export type GlobalPnpConfig = {
   verifyQuerySignatures?: boolean;
   localStorageKey?: string;
   siwsProviderCanisterId?: string;
-  adapters?: Record<string, Adapter.Config>;
-};
+  adapters?: Record<string, AdapterConfig>;
+  logLevel?: LogLevel;
+  persistenceKey?: string;
+  storage?: Storage;
+  maxStateHistorySize?: number;
+  autoRecoverState?: boolean;
+  validateStateOnLoad?: boolean;
+}
 
 export namespace Adapter {
 
@@ -64,14 +71,14 @@ export namespace Adapter {
   
   // deprecated
   export interface Config {
-    id: string;
-    enabled: boolean;
-    logo: string;
-    walletName: string;
-    chain: 'ICP' | 'SOL';
+    id?: string;
+    enabled?: boolean;
+    logo?: string;
+    walletName?: string;
+    chain?: 'ICP' | 'SOL';
     website?: string;
-    adapter: AdapterConstructor;
-    config: {
+    adapter?: AdapterConstructor;
+    config?: {
       [key: string]: any;
     }
   }
@@ -103,7 +110,6 @@ export namespace Adapter {
 
   export interface Interface {
     // Core wallet functionality
-    isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
     connect(): Promise<Wallet.Account>;
     disconnect(): Promise<void>;

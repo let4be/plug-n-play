@@ -1,35 +1,60 @@
 import { ActorSubclass } from '@dfinity/agent';
-import { Wallet, Adapter, GlobalPnpConfig } from './types/index.d';
+import { Adapter, GlobalPnpConfig } from './types/index.d';
+import { AdapterConfig } from './types/AdapterTypes';
+import { WalletAccount } from './types/WalletTypes';
 import { createPNPConfig } from './config';
+import { PnpEventEmitter, PnpEventType, PnpEventListener } from './events';
 export { createPNPConfig, type GlobalPnpConfig };
-export type { Wallet, Adapter, ActorSubclass };
-export interface PnpInterface {
+export type { ActorSubclass, Adapter };
+export interface PnpInterface extends PnpEventEmitter {
     config: GlobalPnpConfig;
-    adapter: Adapter.Config | null;
-    provider: Adapter.Interface | null;
-    account: Wallet.Account | null;
-    actorCache: Map<string, ActorSubclass<any>>;
-    status: Adapter.Status;
-    connect: (walletId?: string) => Promise<Wallet.Account | null>;
+    adapter: AdapterConfig | null;
+    provider: any;
+    account: WalletAccount | null;
+    status: any;
+    connect: (walletId?: string) => Promise<WalletAccount | null>;
     disconnect: () => Promise<void>;
-    getActor: <T>(options: Adapter.GetActorOptions) => ActorSubclass<T>;
+    getActor: <T>(options: any) => ActorSubclass<T>;
     isAuthenticated: () => boolean;
-    getEnabledWallets: () => Adapter.Config[];
+    getEnabledWallets: () => AdapterConfig[];
 }
 export declare class PNP implements PnpInterface {
-    config: ReturnType<typeof createPNPConfig>;
-    adapter: Adapter.Config | null;
-    provider: Adapter.Interface | null;
-    account: Wallet.Account | null;
-    actorCache: Map<string, ActorSubclass<any>>;
-    status: Adapter.Status;
+    private configManager;
+    private connectionManager;
+    private actorManager;
+    private errorManager;
+    private stateManager;
+    private eventEmitter;
+    private static adapterRegistry;
+    /**
+     * Register a new adapter globally. Call before PNP instantiation to make available to all instances.
+     * @param id Adapter id (unique key)
+     * @param config AdapterConfig
+     */
+    static registerAdapter(id: string, config: AdapterConfig): void;
+    /**
+     * Unregister an adapter by id.
+     * @param id Adapter id
+     */
+    static unregisterAdapter(id: string): void;
+    /**
+     * Get all registered adapters.
+     */
+    static getRegisteredAdapters(): Record<string, AdapterConfig>;
     constructor(config?: GlobalPnpConfig);
-    private _resetState;
-    connect(walletId?: string): Promise<Wallet.Account | null>;
+    on<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
+    off<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
+    emit<T>(event: PnpEventType, data: T): void;
+    removeAllListeners(event?: PnpEventType): void;
+    get config(): GlobalPnpConfig;
+    get adapter(): AdapterConfig;
+    get provider(): import('./types/AdapterTypes').AdapterInterface;
+    get account(): WalletAccount;
+    get status(): import('./types/AdapterTypes').AdapterStatus;
+    connect(walletId?: string): Promise<WalletAccount>;
     disconnect(): Promise<void>;
-    getActor<T>(options: Adapter.GetActorOptions): ActorSubclass<T>;
-    createAnonymousActor<T>(canisterId: string, idl: any): ActorSubclass<T>;
+    getActor<T>(options: any): ActorSubclass<T>;
     isAuthenticated(): boolean;
-    getEnabledWallets(): Adapter.Config[];
+    getEnabledWallets(): AdapterConfig[];
 }
 export declare const createPNP: (config?: GlobalPnpConfig) => PNP;

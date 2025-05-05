@@ -1,12 +1,16 @@
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../../types/index.d';
-import { BaseIcAdapter } from './BaseIcAdapter';
-export declare class IIAdapter extends BaseIcAdapter implements Adapter.Interface {
+import { BaseAdapter } from '../BaseAdapter';
+import { IIAdapterConfig } from '../../types/AdapterConfigs';
+export declare class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.Interface {
     private authClient;
     private agent;
-    constructor(args: Adapter.ConstructorArgs);
+    constructor(args: {
+        adapter: any;
+        config: IIAdapterConfig;
+    });
+    private initializeAuthClient;
     private initAgent;
-    isAvailable(): Promise<boolean>;
     connect(): Promise<Wallet.Account>;
     private _continueLogin;
     isConnected(): Promise<boolean>;

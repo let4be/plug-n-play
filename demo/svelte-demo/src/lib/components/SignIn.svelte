@@ -7,13 +7,39 @@
     disconnectWallet,
     pnpInstance,
     selectedWalletId,
+    lastEvent,
   } from "../stores/pnp";
   import { balance, fetchBalance } from "../stores/ledger";
   import { get } from "svelte/store";
+  import { writable } from 'svelte/store';
 
-  let connecting = false;
   let error: string | null = null;
   let userBalance: bigint | null = null;
+  let wallets = [];
+  let connectingWalletId: string | null = null;
+
+  // Subscribe to availableWallets store
+  availableWallets.subscribe((value) => {
+    wallets = value;
+  });
+
+  // Subscribe to events to manage connecting state
+  lastEvent.subscribe((event) => {
+    if (!event) return;
+
+    switch (event.type) {
+      case 'statusChange':
+        if (event.data.newStatus === 'CONNECTING') {
+          connectingWalletId = event.data.walletId;
+        } else if (event.data.newStatus === 'CONNECTED' || event.data.newStatus === 'ERROR') {
+          connectingWalletId = null;
+        }
+        break;
+      case 'error':
+        connectingWalletId = null;
+        break;
+    }
+  });
 
   function formatICPBalance(balance: bigint | null): string {
     if (!balance) return "...";
@@ -21,15 +47,18 @@
     const balanceStr = balance.toString().padStart(decimals + 1, "0");
     const integerPart = balanceStr.slice(0, -decimals) || "0";
     const decimalPart = balanceStr.slice(-decimals);
-    // Remove trailing zeros from decimal part
     const trimmedDecimalPart = decimalPart.replace(/0+$/, "");
     return trimmedDecimalPart 
       ? `${integerPart}.${trimmedDecimalPart}`
       : integerPart;
   }
 
+  function formatEvent(event: any): string {
+    if (!event) return 'No events yet';
+    return JSON.stringify(event, null, 2);
+  }
+
   async function handleConnect(walletId: string) {
-    connecting = true;
     error = null;
     try {
       const pnp = get(pnpInstance);
@@ -43,8 +72,6 @@
     } catch (e) {
       error = e.message;
       console.error('Failed to connect:', e);
-    } finally {
-      connecting = false;
     }
   }
 
@@ -95,13 +122,37 @@
       <div class="wallet-list">
         <h2>Connect your wallet</h2>
         <div class="wallets">
-          {#each availableWallets as wallet}
+          {#each wallets as wallet}
             <button
               class="wallet-button"
-              disabled={connecting}
+              disabled={connectingWalletId === wallet.id}
               on:click|preventDefault={() => handleConnect(wallet.id)}
             >
-              <img src={wallet.logo} alt={wallet.name} />
+              <img src={wallet.logo} alt={wallet.walletName} />
+              {#if connectingWalletId === wallet.id}
+                <div class="connecting-spinner">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="12" y1="2" x2="12" y2="6"></line>
+                    <line x1="12" y1="18" x2="12" y2="22"></line>
+                    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                    <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                    <line x1="2" y1="12" x2="6" y2="12"></line>
+                    <line x1="18" y1="12" x2="22" y2="12"></line>
+                    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                    <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                  </svg>
+                </div>
+              {/if}
             </button>
           {/each}
         </div>
@@ -111,6 +162,11 @@
       </div>
     </div>
   {/if}
+
+  <div class="events-panel">
+    <h3>Latest Event</h3>
+    <pre class="event-data">{formatEvent($lastEvent)}</pre>
+  </div>
 </div>
 
 <style>
@@ -161,6 +217,7 @@
     color: #2d3748;
     cursor: pointer;
     transition: all 0.2s;
+    position: relative;
   }
 
   .wallet-button:hover:not(:disabled) {
@@ -242,5 +299,48 @@
   .disconnect:hover {
     background: #fed7d7;
     border-color: #fc8181;
+  }
+
+  .events-panel {
+    margin-top: 2rem;
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow:
+      0 4px 6px -1px rgb(0 0 0 / 0.1),
+      0 2px 4px -2px rgb(0 0 0 / 0.1);
+  }
+
+  .events-panel h3 {
+    margin: 0 0 1rem;
+    font-size: 1.25rem;
+    color: #1a202c;
+  }
+
+  .event-data {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: #2d3748;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .connecting-spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
-import { createPNP, type PNP, type Wallet, type Adapter, type ActorSubclass } from '../../../../../src'; // Keep relative path for now
+import { createPNP, type PNP, type ActorSubclass } from '../../../../../src'; // Only import what's exported
+import { PnpEventType, type PnpEvent } from '../../../../../src/events';
 
 // Create stores
 export const selectedWalletId = writable<string | null>(null);
@@ -7,6 +8,7 @@ export const pnpInstance = writable<PNP | null>(null); // Store the actual PNP i
 export const isConnected = writable(false);
 export const principalId = writable<string | null>(null); // Store Principal object
 export const accountId = writable<string | null>(null); // Store Account ID string
+export const lastEvent = writable<PnpEvent | null>(null);
 
 // Derived store for available wallets from the initialized instance
 export const availableWallets = derived(pnpInstance, ($pnp) => {
@@ -15,46 +17,101 @@ export const availableWallets = derived(pnpInstance, ($pnp) => {
 
 // Initialize PNP
 export const initializePNP = () => {
-    // Use default config for the demo for now
+    // Comprehensive configuration example
     const pnp = createPNP({
-        hostUrl: 'https://icp0.io',
-        // Example of new adapter config (if needed later):
-        /*
+        // Network configuration
+        dfxNetwork: 'ic', // 'ic' for mainnet, 'local' for local development
+        hostUrl: 'https://icp0.io', // Mainnet endpoint
+        
+        // Security settings
+        fetchRootKeys: false, // Set to true only for local development
+        verifyQuerySignatures: true,
+        
+        // Delegation settings
+        delegationTimeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000), // 24 hours in nanoseconds
+        delegationTargets: [], // Add canister IDs that need delegation
+        derivationOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+        
+        // Storage settings
+        localStorageKey: 'pnpConnectedWallet',
+        
+        // SIWS (Sign In With Service) settings
+        siwsProviderCanisterId: undefined, // Add your SIWS provider canister ID if using SIWS
+        
+        // Adapter configurations
         adapters: {
+            // Plug wallet adapter
+            plug: {
+                enabled: true,
+                config: {
+                    whitelist: [], // Add canister IDs that need to be whitelisted
+                    host: 'https://icp0.io',
+                    // Add any Plug-specific config here
+                }
+            },
+            // Internet Identity adapter
             ii: {
-                identityProvider: 'https://identity.ic0.app'
+                enabled: true,
+                config: {
+                    identityProvider: 'https://identity.ic0.app',
+                    // Add any II-specific config here
+                }
             }
         }
-        */
     });
 
-    // Set the actual instance, no wrapper needed
+    // Set up event listeners
+    pnp.on(PnpEventType.CONNECTED, (event) => {
+        console.log('Connected event:', event);
+        lastEvent.set(event);
+    });
+
+    pnp.on(PnpEventType.DISCONNECTED, (event) => {
+        console.log('Disconnected event:', event);
+        lastEvent.set(event);
+    });
+
+    pnp.on(PnpEventType.ERROR, (event) => {
+        console.error('Error event:', event);
+        lastEvent.set(event);
+    });
+
+    pnp.on(PnpEventType.ACCOUNT_CHANGE, (event) => {
+        console.log('Account changed event:', event);
+        lastEvent.set(event);
+    });
+
+    pnp.on(PnpEventType.STATUS_CHANGE, (event) => {
+        console.log('Status change event:', event);
+        lastEvent.set(event);
+    });
+
+    // Set the actual instance
     pnpInstance.set(pnp);
 
     // Check for existing connection on init
-    const storedWalletId = localStorage.getItem(pnp.config.localStorageKey);
-    if (storedWalletId && !get(isConnected)) { // Check if not already connected
-        pnp.connect().then(async account => { // Make callback async
-            if (account && pnp.provider) { // Check for provider too
+    const storedWalletId = localStorage.getItem(pnp.config.localStorageKey || '');
+    if (storedWalletId && !get(isConnected)) {
+        pnp.connect().then(async account => {
+            if (account && pnp.provider) {
                 selectedWalletId.set(storedWalletId);
                 isConnected.set(true);
                 principalId.set(account.owner);
                 try {
-                    const accId = await pnp.provider.getAccountId(); // Fetch accountId
+                    const accId = await pnp.provider.getAccountId();
                     accountId.set(accId);
                 } catch (accIdError) {
                     console.error("Failed to get accountId after reconnect:", accIdError);
-                    accountId.set(null); // Reset on error
+                    accountId.set(null);
                 }
             }
         }).catch(err => {
-             console.warn("Failed to auto-reconnect:", err);
-             localStorage.removeItem(pnp.config.localStorageKey); // Clear invalid storage
-             // Ensure state is reset if auto-reconnect fails
-             selectedWalletId.set(null);
-             isConnected.set(false);
-             principalId.set(null);
-             accountId.set(null);
+            console.warn("Failed to auto-reconnect:", err);
+            localStorage.removeItem(pnp.config.localStorageKey || '');
+            selectedWalletId.set(null);
+            isConnected.set(false);
+            principalId.set(null);
+            accountId.set(null);
         });
     }
 

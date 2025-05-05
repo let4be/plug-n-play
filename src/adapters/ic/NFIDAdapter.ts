@@ -6,15 +6,16 @@ import { PostMessageTransport } from "@slide-computer/signer-web";
 import { SignerAgent } from "@slide-computer/signer-agent";
 import { Signer } from "@slide-computer/signer";
 import { SignerError } from "@slide-computer/signer";
-import { BaseIcAdapter } from "./BaseIcAdapter"; // Add BaseIcAdapter import
+import { BaseAdapter } from "../BaseAdapter"; // Add BaseIcAdapter import
 import { 
   createAccountFromPrincipal, 
   isPrincipalAnonymous,
   fetchRootKeysIfNeeded
-} from "./icUtils"; // Import utility functions
+} from "../../utils/icUtils"; // Import utility functions
+import { NFIDAdapterConfig } from "../../types/AdapterConfigs";
 
 // Extend BaseIcAdapter instead of just implementing Adapter.Interface
-export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
+export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
   private static readonly TRANSPORT_CONFIG = {
     windowOpenerFeatures: "width=525,height=705",
     establishTimeout: 45000,
@@ -58,11 +59,7 @@ export class NFIDAdapter extends BaseIcAdapter implements Adapter.Interface {
 
     this.setState(Adapter.Status.READY); // Use inherited setState
   }
-
-  async isAvailable(): Promise<boolean> {
-    return true; // NFID is web-based, so it's always available
-  }
-
+  
   async isConnected(): Promise<boolean> {
     return this.identity !== null && this.state === Adapter.Status.CONNECTED;
   }

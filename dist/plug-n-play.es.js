@@ -1,7 +1,6 @@
-import { v, w, u } from "./index-9Rmuwpsp.js";
-import "@dfinity/agent";
+import { h, i, f } from "./index-CpkIqiud.js";
 export {
-  v as PNP,
-  w as createPNP,
-  u as createPNPConfig
+  h as PNP,
+  i as createPNP,
+  f as createPNPConfig
 };

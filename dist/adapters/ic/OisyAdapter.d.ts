@@ -1,7 +1,8 @@
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../../types/index.d';
-import { BaseIcAdapter } from './BaseIcAdapter';
-export declare class OisyAdapter extends BaseIcAdapter implements Adapter.Interface {
+import { BaseAdapter } from '../BaseAdapter';
+import { OisyAdapterConfig } from '../../types/AdapterConfigs';
+export declare class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapter.Interface {
     private static readonly TRANSPORT_CONFIG;
     private static readonly OISY_PRINCIPAL_KEY;
     private signer;
@@ -9,7 +10,6 @@ export declare class OisyAdapter extends BaseIcAdapter implements Adapter.Interf
     private signerAgent;
     private transport;
     constructor(args: Adapter.ConstructorArgs);
-    isAvailable(): Promise<boolean>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;
     getAccountId(): Promise<string>;

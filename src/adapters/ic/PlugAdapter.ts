@@ -3,17 +3,12 @@
 import { ActorSubclass } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import { Adapter, Wallet } from "../../types/index.d";
-import { BaseIcAdapter } from "./BaseIcAdapter";
-import { 
-  deriveAccountId, 
-  handleConnectionError, 
-  createAccountFromPrincipal,
-  createActorCacheKey,
-  withRetry
-} from "./icUtils";
+import { BaseAdapter } from "../BaseAdapter";
+import { createAccountFromPrincipal } from "../../utils/icUtils";
+import { PlugAdapterConfig } from "../../types/AdapterConfigs";
 
 // Extend BaseIcAdapter
-export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
+export class PlugAdapter extends BaseAdapter<PlugAdapterConfig> implements Adapter.Interface {
   // Plug specific properties
   private readyState:
     | "NotDetected"
@@ -47,12 +42,6 @@ export class PlugAdapter extends BaseIcAdapter implements Adapter.Interface {
       this.readyState = "NotDetected";
       this.setState(Adapter.Status.INIT); // Or perhaps ERROR/UNAVAILABLE?
     }
-  }
-
-  // Implement abstract methods
-  async isAvailable(): Promise<boolean> {
-    // Reflects if the Plug extension is installed
-    return this.readyState !== "NotDetected";
   }
 
   async connect(): Promise<Wallet.Account> {

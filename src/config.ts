@@ -1,6 +1,5 @@
 import { Adapter } from "./types";
-import { ICAdapters } from "./adapters/ic"; // Removed defaultICAdapterConfigs import
-import { SolAdapters } from "./adapters/sol"; // Added import for SolAdapters
+import { Adapters } from "./adapters"; // Removed defaultICAdapterConfigs import
 import { GlobalPnpConfig } from ".";
 
 // Type for user-provided adapter overrides
@@ -14,6 +13,7 @@ type AdapterUserOverride = Partial<Omit<Adapter.Config, 'id' | 'adapter' | 'conf
 // Main configuration for the PNP library
 export interface CreatePnpArgs {
   dfxNetwork?: string; // Useful for determining dev environment
+  solanaNetwork?: string;
   hostUrl?: string;
   delegationTimeout?: bigint;
   delegationTargets?: string[];
@@ -31,6 +31,7 @@ export interface CreatePnpArgs {
 export const defaultCreateArgs = {
   // Global defaults matching user's updated PnpConfig
   dfxNetwork: "ic",
+  solanaNetwork: "mainnet",
   hostUrl: "https://icp0.io",
   delegationTimeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
   delegationTargets: [],
@@ -40,8 +41,7 @@ export const defaultCreateArgs = {
   localStorageKey: "pnpConnectedWallet",
   siwsProviderCanisterId: undefined,
   adapters: {
-    ...ICAdapters,
-    ...SolAdapters, // Merge SolAdapters into the defaults
+    ...Adapters,
   },
 };
 
@@ -52,7 +52,7 @@ export type FullPNPConfig = typeof defaultCreateArgs;
 export function createPNPConfig(config: CreatePnpArgs = {}): GlobalPnpConfig {
   const finalAdapters: Record<string, Adapter.Config> = {};
 
-  // Iterate over the DEFAULT adapters defined in ICAdapters and SolAdapters
+  // Iterate over the DEFAULT adapters defined in Adapters and SolAdapters
   for (const adapterId in defaultCreateArgs.adapters) {
       const defaultAdapterInfo = defaultCreateArgs.adapters[adapterId];
       const userAdapterOverride = config.adapters?.[adapterId]; // This is now of type AdapterUserOverride | undefined
