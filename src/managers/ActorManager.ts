@@ -1,7 +1,13 @@
-import { Actor, HttpAgent, ActorSubclass } from '@dfinity/agent';
-import { AdapterInterface, GetActorOptions } from '../types/AdapterTypes';
-import { GlobalPnpConfig } from '../types/index.d';
-import { PnpEventEmitter, PnpEventType, PnpEventListener, EventEmitter } from '../events';
+import { Actor, HttpAgent, ActorSubclass } from "@dfinity/agent";
+import { AdapterInterface, GetActorOptions } from "../types/AdapterTypes";
+import { GlobalPnpConfig } from "../types/index.d";
+import {
+  PnpEventEmitter,
+  PnpEventType,
+  PnpEventListener,
+  EventEmitter,
+} from "../events";
+import { fetchRootKeysIfNeeded } from "../utils/icUtils";
 
 export class ActorManager implements PnpEventEmitter {
   private config: GlobalPnpConfig;
@@ -9,7 +15,10 @@ export class ActorManager implements PnpEventEmitter {
   private actorCache: Map<string, ActorSubclass<any>> = new Map();
   private eventEmitter: EventEmitter;
 
-  constructor(config: GlobalPnpConfig, provider: AdapterInterface | null = null) {
+  constructor(
+    config: GlobalPnpConfig,
+    provider: AdapterInterface | null = null
+  ) {
     this.config = config;
     this.provider = provider;
     this.eventEmitter = new EventEmitter();
@@ -18,7 +27,10 @@ export class ActorManager implements PnpEventEmitter {
   setProvider(provider: AdapterInterface | null) {
     const oldProvider = this.provider;
     this.provider = provider;
-    this.emit(PnpEventType.PROVIDER_CHANGED, { oldProvider, newProvider: provider });
+    this.emit(PnpEventType.PROVIDER_CHANGED, {
+      oldProvider,
+      newProvider: provider,
+    });
   }
 
   getActor<T>(options: GetActorOptions): ActorSubclass<T> {
@@ -27,14 +39,18 @@ export class ActorManager implements PnpEventEmitter {
       return this.createAnonymousActor<T>(canisterId, idl);
     }
     if (!this.provider) {
-      throw new Error('Cannot create signed actor. No wallet provider connected.');
+      throw new Error(
+        "Cannot create signed actor. No wallet provider connected."
+      );
     }
-    const actor = this.provider.createActor<T>(canisterId, idl, { requiresSigning });
-    this.emit(PnpEventType.ACTOR_CREATED, { 
-      canisterId, 
-      idl, 
+    const actor = this.provider.createActor<T>(canisterId, idl, {
+      requiresSigning,
+    });
+    this.emit(PnpEventType.ACTOR_CREATED, {
+      canisterId,
+      idl,
       isAnonymous: false,
-      requiresSigning 
+      requiresSigning,
     });
     return actor;
   }
@@ -43,19 +59,21 @@ export class ActorManager implements PnpEventEmitter {
     const cacheKey = `anon-${canisterId}`;
     const cachedActor = this.actorCache.get(cacheKey);
     if (cachedActor) return cachedActor;
+    const agent = HttpAgent.createSync({
+      host: this.config.hostUrl,
+      verifyQuerySignatures: this.config.verifyQuerySignatures,
+    });
+    fetchRootKeysIfNeeded(agent, this.config.fetchRootKeys);
     const actor = Actor.createActor<T>(idl, {
-      agent: HttpAgent.createSync({
-        host: this.config.hostUrl,
-        verifyQuerySignatures: this.config.verifyQuerySignatures,
-      }),
+      agent,
       canisterId,
     });
     this.actorCache.set(cacheKey, actor);
-    this.emit(PnpEventType.ACTOR_CREATED, { 
-      canisterId, 
-      idl, 
+    this.emit(PnpEventType.ACTOR_CREATED, {
+      canisterId,
+      idl,
       isAnonymous: true,
-      requiresSigning: false 
+      requiresSigning: false,
     });
     return actor;
   }
@@ -63,9 +81,9 @@ export class ActorManager implements PnpEventEmitter {
   clearCache() {
     const cacheSize = this.actorCache.size;
     this.actorCache.clear();
-    this.emit(PnpEventType.CACHE_CLEARED, { 
+    this.emit(PnpEventType.CACHE_CLEARED, {
       clearedEntries: cacheSize,
-      timestamp: Date.now() 
+      timestamp: Date.now(),
     });
   }
 
@@ -85,4 +103,4 @@ export class ActorManager implements PnpEventEmitter {
   removeAllListeners(event?: PnpEventType): void {
     this.eventEmitter.removeAllListeners(event);
   }
-} 
+}

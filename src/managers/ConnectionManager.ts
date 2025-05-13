@@ -2,6 +2,7 @@ import { AdapterConfig, AdapterInterface, AdapterStatus } from '../types/Adapter
 import { WalletAccount } from '../types/WalletTypes';
 import { GlobalPnpConfig } from '../types/index.d';
 import { PnpEventEmitter, PnpEventType, PnpEventListener, EventEmitter, PnpEvent } from '../events';
+import { ErrorManager } from './ErrorManager';
 
 export class ConnectionManager implements PnpEventEmitter {
   config: GlobalPnpConfig;
@@ -10,11 +11,13 @@ export class ConnectionManager implements PnpEventEmitter {
   account: WalletAccount | null = null;
   status: AdapterStatus = AdapterStatus.INIT;
   private eventEmitter: EventEmitter;
+  private logger: ErrorManager;
 
-  constructor(config: GlobalPnpConfig) {
+  constructor(config: GlobalPnpConfig, logger?: ErrorManager) {
     this.config = config;
     this.status = AdapterStatus.READY;
     this.eventEmitter = new EventEmitter();
+    this.logger = logger || new ErrorManager(this.eventEmitter);
   }
 
   private _resetState(): void {
@@ -95,7 +98,8 @@ export class ConnectionManager implements PnpEventEmitter {
         config: {
           ...this.config,
           ...adapterInfo.config
-        }
+        },
+        logger: this.logger
       });
       
       // Validate adapter instance
@@ -170,7 +174,7 @@ export class ConnectionManager implements PnpEventEmitter {
         try {
           await instance.disconnect();
         } catch (disconnectError) {
-          console.error('Error during disconnect after failed connect:', disconnectError);
+          this.logger.error('Error during disconnect after failed connect', disconnectError as Error);
         }
       }
 

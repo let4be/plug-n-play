@@ -2,6 +2,7 @@ import { AdapterConfig, AdapterInterface, AdapterStatus } from '../types/Adapter
 import { WalletAccount } from '../types/WalletTypes';
 import { GlobalPnpConfig } from '../types/index.d';
 import { PnpEventEmitter, PnpEventType, PnpEventListener } from '../events';
+import { ErrorManager } from './ErrorManager';
 export declare class ConnectionManager implements PnpEventEmitter {
     config: GlobalPnpConfig;
     adapter: AdapterConfig | null;
@@ -9,7 +10,8 @@ export declare class ConnectionManager implements PnpEventEmitter {
     account: WalletAccount | null;
     status: AdapterStatus;
     private eventEmitter;
-    constructor(config: GlobalPnpConfig);
+    private logger;
+    constructor(config: GlobalPnpConfig, logger?: ErrorManager);
     private _resetState;
     connect(walletId?: string): Promise<WalletAccount | null>;
     disconnect(): Promise<void>;

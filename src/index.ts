@@ -1,6 +1,6 @@
 import { ActorSubclass } from "@dfinity/agent";
 import { Adapter, GlobalPnpConfig } from "./types/index.d";
-import { AdapterConfig } from './types/AdapterTypes';
+import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
 import { WalletAccount } from './types/WalletTypes';
 import { createPNPConfig } from "./config";
 import { ConnectionManager } from './managers/ConnectionManager';
@@ -90,7 +90,7 @@ export class PNP implements PnpInterface {
 
     this.configManager = new ConfigManager(mergedConfig);
     const finalConfig = this.configManager.getConfig();
-    this.connectionManager = new ConnectionManager(finalConfig);
+    this.connectionManager = new ConnectionManager(finalConfig, this.errorManager);
     this.actorManager = new ActorManager(finalConfig, null);
 
     // Keep actorManager's provider in sync with connectionManager
@@ -184,7 +184,7 @@ export class PNP implements PnpInterface {
     }
   }
 
-  getActor<T>(options: any): ActorSubclass<T> {
+  getActor<T>(options: GetActorOptions): ActorSubclass<T> {
     return this.actorManager.getActor<T>(options);
   }
 

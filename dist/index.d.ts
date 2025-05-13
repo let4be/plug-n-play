@@ -1,6 +1,6 @@
 import { ActorSubclass } from '@dfinity/agent';
 import { Adapter, GlobalPnpConfig } from './types/index.d';
-import { AdapterConfig } from './types/AdapterTypes';
+import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
 import { WalletAccount } from './types/WalletTypes';
 import { createPNPConfig } from './config';
 import { PnpEventEmitter, PnpEventType, PnpEventListener } from './events';
@@ -53,7 +53,7 @@ export declare class PNP implements PnpInterface {
     get status(): import('./types/AdapterTypes').AdapterStatus;
     connect(walletId?: string): Promise<WalletAccount>;
     disconnect(): Promise<void>;
-    getActor<T>(options: any): ActorSubclass<T>;
+    getActor<T>(options: GetActorOptions): ActorSubclass<T>;
     isAuthenticated(): boolean;
     getEnabledWallets(): AdapterConfig[];
 }

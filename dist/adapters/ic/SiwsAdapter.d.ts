@@ -15,9 +15,12 @@ export declare class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implemen
     private principal;
     private solanaAddress;
     private tokenManager;
+    private storage;
+    private sessionKey;
     constructor(args: Adapter.ConstructorArgs & {
         config: SiwsAdapterConfig;
     });
+    private restoreFromStorage;
     private createSolanaAdapter;
     private setupWalletListeners;
     private removeWalletListeners;

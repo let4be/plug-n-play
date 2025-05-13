@@ -1,6 +1,7 @@
 import { ActorSubclass } from '@dfinity/agent';
 import { Wallet, Adapter } from '../types/index.d';
 import { AdapterSpecificConfig } from '../types/AdapterConfigs';
+import { ErrorManager } from '../managers/ErrorManager';
 /**
  * Abstract base class for adapters implementing Adapter.Interface
  */
@@ -10,8 +11,10 @@ export declare abstract class BaseAdapter<T extends AdapterSpecificConfig = Adap
     protected config: T;
     protected adapter: Adapter.Config;
     protected actorCache: Map<string, ActorSubclass<any>>;
+    protected logger: ErrorManager;
     constructor(args: Adapter.ConstructorArgs & {
         config: T;
+        logger?: ErrorManager;
     });
     protected setState(newState: Adapter.Status): void;
     getState(): Adapter.Status;

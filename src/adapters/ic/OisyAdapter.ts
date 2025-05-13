@@ -100,8 +100,6 @@ export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapt
       if (storedPrincipal && isValidPrincipal(storedPrincipal)) {
         try {
           principal = Principal.fromText(storedPrincipal);
-          // Assume the stored principal is valid for now to avoid the popup.
-          // If it's invalid, subsequent agent operations will likely fail.
           this.signerAgent.replaceAccount(principal);
         } catch (e) {
           localStorage.removeItem(OisyAdapter.OISY_PRINCIPAL_KEY);
@@ -188,6 +186,5 @@ export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapt
     // Reset agents but keep transport and signer for faster reconnection
     this.agent = null;
     this.signerAgent = null;
-    // Don't reset transport or signer: this.transport = null; this.signer = null;
   }
 }

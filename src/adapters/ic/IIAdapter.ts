@@ -5,7 +5,6 @@ import { AuthClient } from "@dfinity/auth-client";
 import { type Wallet, Adapter } from "../../types/index.d";
 import { BaseAdapter } from "../BaseAdapter";
 import { 
-  handleConnectionError, 
   fetchRootKeysIfNeeded, 
   createAccountFromPrincipal,
 } from "../../utils/icUtils"; // Import utility functions
@@ -116,6 +115,7 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
       }
 
       const principal = identity.getPrincipal();
+
       if (principal.isAnonymous()) {
         throw new Error("Login resulted in anonymous principal");
       }
@@ -150,6 +150,7 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
     if (!this.agent) {
       throw new Error("Agent not initialized. Connect first.");
     }
+
     return Actor.createActor<T>(idl, {
       agent: this.agent,
       canisterId,

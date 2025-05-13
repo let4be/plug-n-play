@@ -13,6 +13,7 @@ import {
   fetchRootKeysIfNeeded
 } from "../../utils/icUtils"; // Import utility functions
 import { NFIDAdapterConfig } from "../../types/AdapterConfigs";
+import { IdbStorage, getDelegationChain, setDelegationChain, removeDelegationChain } from "@slide-computer/signer-storage";
 
 // Extend BaseIcAdapter instead of just implementing Adapter.Interface
 export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
@@ -30,9 +31,13 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
   private signerAgent: SignerAgent<Signer> | null;
   private signer: Signer | null;
   private transport: PostMessageTransport | null;
+  private storage: IdbStorage;
 
   constructor(args: Adapter.ConstructorArgs) {
     super(args); // Call BaseIcAdapter constructor with args
+
+    // Initialize storage
+    this.storage = new IdbStorage();
 
     // Create transport with the configured URL and non-click detection disabled
     this.transport = new PostMessageTransport({
@@ -58,8 +63,55 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
 
     this.setState(Adapter.Status.READY); // Use inherited setState
+
+    // Attempt to restore from storage
+    this.restoreFromStorage().catch(error => {
+      console.debug("Failed to restore from storage:", error);
+    });
   }
   
+  private async restoreFromStorage(): Promise<void> {
+    try {
+      const delegationChain = await getDelegationChain("nfid", this.storage);
+      
+      if (!delegationChain) {
+        return;
+      }
+
+      // Check if delegation is still valid
+      const expiration = delegationChain.delegations[0].delegation.expiration;
+      if (expiration < BigInt(Date.now() * 1_000_000)) {
+        await removeDelegationChain("nfid", this.storage);
+        return;
+      }
+      
+      // Generate a new session key
+      this.sessionKey = Ed25519KeyIdentity.generate();
+
+      // Create identity from stored delegation
+      this.identity = DelegationIdentity.fromDelegation(
+        this.sessionKey,
+        delegationChain
+      );
+
+      // Update signer agent with restored principal
+      this.signerAgent = SignerAgent.createSync({
+        signer: this.signer!,
+        account: this.identity.getPrincipal(),
+        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }),
+      });
+
+      this.setState(Adapter.Status.CONNECTED);
+    } catch (error) {
+      console.debug("[NFID] Error restoring from storage:", error);
+      // Clear potentially invalid state
+      this.identity = null;
+      this.signerAgent = null;
+      this.sessionKey = null;
+      await removeDelegationChain("nfid", this.storage);
+    }
+  }
+
   async isConnected(): Promise<boolean> {
     return this.identity !== null && this.state === Adapter.Status.CONNECTED;
   }
@@ -85,9 +137,25 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
   };
 
   async connect(): Promise<Wallet.Account> {
+    // If we're already connected, return the current account
+    if (this.identity && this.state === Adapter.Status.CONNECTED) {
+      return createAccountFromPrincipal(this.identity.getPrincipal());
+    }
+
+    // Try to restore from storage first
+    if (!this.identity) {
+      try {
+        await this.restoreFromStorage();
+        if (this.identity && this.state === Adapter.Status.CONNECTED) {
+          return createAccountFromPrincipal(this.identity.getPrincipal());
+        }
+      } catch (error) {
+        console.debug("[NFID] Failed to restore from storage:", error);
+      }
+    }
+
     this.setState(Adapter.Status.CONNECTING);
 
-    // --- Connection Flow (Handles both initial and potential re-establishment) ---
     if (!this.signer || !this.transport || !this.agent) {
       this.setState(Adapter.Status.ERROR);
       throw new Error("NFID Adapter not initialized correctly.");
@@ -95,21 +163,18 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
 
     try {
       await this.signer.openChannel();
-      // Generate a new session key for each connection attempt
       this.sessionKey = Ed25519KeyIdentity.generate();
 
-      // maxTimeToLive is expected in nanoseconds from Date.now() epoch
       const maxTimeToLiveNs =
-        this.adapter.config.delegationTimeout !== undefined // Access global config
+        this.adapter.config.delegationTimeout !== undefined
           ? BigInt(Date.now() * 1_000_000) +
-            BigInt(this.adapter.config.delegationTimeout) // Convert Date.now() (ms) to ns and add timeout (ns)
+            BigInt(this.adapter.config.delegationTimeout)
           : BigInt(Date.now() * 1_000_000) +
-            BigInt(48 * 60 * 60 * 1_000_000_000); // Default: Now + 24h in ns
+            BigInt(48 * 60 * 60 * 1_000_000_000);
 
-      // This call will prompt the user if necessary or use existing session
       const delegationChain = await this.signer.delegation({
         publicKey: this.sessionKey.getPublicKey().toDer(),
-        targets: Array.isArray(this.adapter.config.delegationTargets) // Access global config
+        targets: Array.isArray(this.adapter.config.delegationTargets)
           ? this.adapter.config.delegationTargets
               .filter((target): target is string => typeof target === 'string' && target.length > 0)
               .map(target => Principal.fromText(target))
@@ -117,21 +182,22 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
         maxTimeToLive: maxTimeToLiveNs,
       });
 
+      await setDelegationChain("nfid", delegationChain, this.storage);
+
       const delegationIdentity = DelegationIdentity.fromDelegation(
         this.sessionKey,
         delegationChain
       );
 
-      // Create/Update SignerAgent with the new principal
       this.signerAgent = SignerAgent.createSync({
         signer: this.signer,
         account: delegationIdentity.getPrincipal(),
-        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }), // Use RPC URL for the signer agent
+        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }),
       });
 
       this.identity = delegationIdentity;
 
-      if (this.adapter.config.fetchRootKeys) { // Access global config
+      if (this.adapter.config.fetchRootKeys) {
         await fetchRootKeysIfNeeded(this.agent, true);
       }
 
@@ -139,10 +205,10 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
 
       if (isPrincipalAnonymous(principal)) {
         this.setState(Adapter.Status.READY);
-        // Clear potentially invalid state
         this.identity = null;
         this.signerAgent = null;
         this.sessionKey = null;
+        await removeDelegationChain("nfid", this.storage);
         throw new Error(
           "Failed to authenticate with NFID - got anonymous principal"
         );
@@ -151,19 +217,20 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
       this.setState(Adapter.Status.CONNECTED);
       return createAccountFromPrincipal(principal);
     } catch (error) {
-      // Attempt cleanup on error
+      console.debug("[NFID] Connection failed:", error);
       this.identity = null;
       this.signerAgent = null;
       this.sessionKey = null;
+      await removeDelegationChain("nfid", this.storage);
       if (this.signer) {
         try {
           this.signer.closeChannel();
         } catch (e) {
-          console.debug("Error closing channel on connect failure:", e);
+          console.debug("[NFID] Error closing channel on connect failure:", e);
         }
       }
-      this.setState(Adapter.Status.READY); // Or Adapter.Status.ERROR ?
-      throw error; // Re-throw original error
+      this.setState(Adapter.Status.READY);
+      throw error;
     }
   }
 
@@ -239,6 +306,7 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     this.identity = null;
     this.signerAgent = null; // Nullify signer agent specific to connection
     this.sessionKey = null;
+    await removeDelegationChain("nfid", this.storage);
 
     try {
       if (this.signer) {

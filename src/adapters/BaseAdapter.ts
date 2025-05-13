@@ -8,6 +8,7 @@ import {
   createActorCacheKey, 
   createAccountFromPrincipal
 } from "../utils/icUtils"; // Import utility functions
+import { ErrorManager, LogLevel } from "../managers/ErrorManager";
 
 /**
  * Abstract base class for adapters implementing Adapter.Interface
@@ -18,10 +19,12 @@ export abstract class BaseAdapter<T extends AdapterSpecificConfig = AdapterSpeci
   protected config: T;
   protected adapter: Adapter.Config;
   protected actorCache: Map<string, ActorSubclass<any>> = new Map();
+  protected logger: ErrorManager;
 
-  constructor(args: Adapter.ConstructorArgs & { config: T }) {
+  constructor(args: Adapter.ConstructorArgs & { config: T; logger?: ErrorManager }) {
     this.config = args.config; // Store global config
     this.adapter = args.adapter; // Store adapter-specific config
+    this.logger = args.logger || new ErrorManager(null, LogLevel.INFO); // Use provided logger or create fallback
   }
 
   // Common state management
@@ -106,8 +109,7 @@ export abstract class BaseAdapter<T extends AdapterSpecificConfig = AdapterSpeci
     try {
       await this.disconnectInternal(); // Call subclass-specific logic
     } catch (error) {
-      console.error(`[${this.adapter.walletName}] Error during disconnect:`, error);
-      // Ensure state is set even on error, but maybe log or handle differently
+      this.logger.error(`Error during disconnect for ${this.adapter.walletName}`, error as Error);
     } finally {
       this.cleanupInternal(); // Allow subclasses for further cleanup
       this.setState(Adapter.Status.DISCONNECTED);

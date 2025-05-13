@@ -25,25 +25,33 @@ import {
   Delegation,
 } from "@dfinity/identity";
 import bs58 from "bs58";
-import { formatSiwsMessage } from "../../utils/solUtils";
+import { formatSiwsMessage } from "../../utils/utils";
 import type { _SERVICE as SiwsProviderService } from "../../did/ic_siws_provider";
 import { idlFactory as siwsProviderIdlFactory } from "../../did/ic_siws_provider.did.js";
-import { AccountIdentifier } from "@dfinity/ledger-icp";
 import { BaseAdapter } from "../BaseAdapter";
 import { SiwsAdapterConfig } from "../../types/AdapterConfigs";
-import { TokenManager, SplTokenBalance } from '../../managers/SplTokenManager';
+import { TokenManager, SplTokenBalance } from "../../managers/SplTokenManager";
+import { deriveAccountId } from "../../utils/icUtils";
+import { IdbStorage, getDelegationChain, setDelegationChain, removeDelegationChain } from "@slide-computer/signer-storage";
 
 // Check if we're in a browser environment
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+const isBrowser =
+  typeof window !== "undefined" && typeof window.document !== "undefined";
 
 // Define SIWS Provider Actor interface using generated types
 type SiwsProviderActor = ActorSubclass<SiwsProviderService>;
 
-export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapter.Interface {
+export class SiwsAdapter
+  extends BaseAdapter<SiwsAdapterConfig>
+  implements Adapter.Interface
+{
   public walletName: string;
   public logo: string;
   public readonly id: string;
-  static supportedChains: Adapter.Chain[] = [Adapter.Chain.ICP, Adapter.Chain.SOL];
+  static supportedChains: Adapter.Chain[] = [
+    Adapter.Chain.ICP,
+    Adapter.Chain.SOL,
+  ];
 
   protected state: Adapter.Status = Adapter.Status.INIT;
   private solanaAdapter: Promise<SolanaAdapter> | null = null;
@@ -52,6 +60,8 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
   private principal: Principal | null = null;
   private solanaAddress: string | null = null;
   private tokenManager: TokenManager;
+  private storage: IdbStorage;
+  private sessionKey: Ed25519KeyIdentity | null = null;
 
   constructor(args: Adapter.ConstructorArgs & { config: SiwsAdapterConfig }) {
     super(args);
@@ -59,25 +69,80 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
     this.walletName = args.adapter.walletName;
     this.logo = args.adapter.logo;
     this.config = args.config;
+    this.storage = new IdbStorage();
+    
     const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
-    const endpoint = network === WalletAdapterNetwork.Mainnet
-      ? "https://wiser-omniscient-thunder.solana-mainnet.quiknode.pro/c3a27d9cb72eb335a30e3407d576ef64e61b4e8d"
-      : "https://api.devnet.solana.com";
+    const endpoint =
+      network === WalletAdapterNetwork.Mainnet
+        ? "https://wiser-omniscient-thunder.solana-mainnet.quiknode.pro/c3a27d9cb72eb335a30e3407d576ef64e61b4e8d"
+        : "https://api.devnet.solana.com";
     this.solanaConnection = new Connection(endpoint);
     this.tokenManager = new TokenManager(this.solanaConnection);
-    
+
     // Only initialize the adapter if we're in a browser environment
-    if (isBrowser && this.id !== 'walletconnectSiws') {
+    if (isBrowser && this.id !== "walletconnectSiws") {
       this.solanaAdapter = this.createSolanaAdapter(network);
       this.setupWalletListeners();
     }
-    
+
     this.state = Adapter.Status.READY;
+
+    // Attempt to restore from storage
+    this.restoreFromStorage().catch(error => {
+      this.logger.debug("Failed to restore from storage:", error);
+    });
   }
 
-  private async createSolanaAdapter(network: WalletAdapterNetwork): Promise<SolanaAdapter> {
+  private async restoreFromStorage(): Promise<void> {
+    try {
+      const delegationChain = await getDelegationChain(this.id, this.storage);
+      if (!delegationChain) {
+        return;
+      }
+
+      // Check if delegation is still valid
+      const expiration = delegationChain.delegations[0].delegation.expiration;
+      if (expiration < BigInt(Date.now() * 1_000_000)) {
+        await removeDelegationChain(this.id, this.storage);
+        return;
+      }
+
+      // Generate a new session key
+      this.sessionKey = Ed25519KeyIdentity.generate();
+
+      // Create identity from stored delegation
+      this.identity = DelegationIdentity.fromDelegation(
+        this.sessionKey,
+        delegationChain
+      );
+
+      this.principal = this.identity.getPrincipal();
+
+      // Try to get Solana address from storage
+      const storedAddress = await this.storage.get(`${this.id}-solana-address`);
+      if (storedAddress && typeof storedAddress === 'string') {
+        this.solanaAddress = storedAddress;
+      }
+
+      this.state = Adapter.Status.CONNECTED;
+    } catch (error) {
+      this.logger.debug("Error restoring from storage:", error);
+      // Clear potentially invalid state
+      this.identity = null;
+      this.principal = null;
+      this.solanaAddress = null;
+      this.sessionKey = null;
+      await removeDelegationChain(this.id, this.storage);
+    }
+  }
+
+  private async createSolanaAdapter(
+    network: WalletAdapterNetwork,
+  ): Promise<SolanaAdapter> {
     if (!isBrowser) {
-      throw new Error("Cannot create Solana adapter in non-browser environment");
+      throw new Error(
+        "Cannot create Solana adapter in non-browser environment",
+      );
     }
 
     switch (this.id) {
@@ -88,21 +153,30 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
       case "backpackSiws":
         return new BackpackWalletAdapter();
       case "walletconnectSiws": {
-        const { WalletConnectWalletAdapter } = await import('@solana/wallet-adapter-walletconnect');
+        const { WalletConnectWalletAdapter } = await import(
+          "@solana/wallet-adapter-walletconnect"
+        );
         const wcAdapter = new WalletConnectWalletAdapter({
-          network: network as WalletAdapterNetwork.Mainnet | WalletAdapterNetwork.Devnet,
+          network: network as
+            | WalletAdapterNetwork.Mainnet
+            | WalletAdapterNetwork.Devnet,
           options: {
             relayUrl: "wss://relay.walletconnect.com",
             projectId: this.config.projectId || "",
             metadata: {
               name: this.config.appName || "W98 dApp",
-              description: this.config.appDescription || "A dApp using WalletConnect for Solana",
+              description:
+                this.config.appDescription ||
+                "A dApp using WalletConnect for Solana",
               url: this.config.appUrl || "https://w98.io",
               icons: this.config.appIcons || ["https://w98.io/logo.png"],
             },
           },
         });
-        console.log(`[${this.walletName}] WalletConnect adapter created with config:`, wcAdapter);
+        this.logger.debug(
+          `WalletConnect adapter created with config:`,
+          wcAdapter,
+        );
         return wcAdapter;
       }
       default:
@@ -112,7 +186,7 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
 
   private setupWalletListeners(): void {
     if (!this.solanaAdapter) return;
-    this.solanaAdapter.then(adapter => {
+    this.solanaAdapter.then((adapter) => {
       adapter.on("connect", this.handleSolanaConnect);
       adapter.on("disconnect", this.handleSolanaDisconnect);
       adapter.on("error", this.handleSolanaError);
@@ -121,7 +195,7 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
 
   private removeWalletListeners(): void {
     if (!this.solanaAdapter) return;
-    this.solanaAdapter.then(adapter => {
+    this.solanaAdapter.then((adapter) => {
       adapter.off("connect", this.handleSolanaConnect);
       adapter.off("disconnect", this.handleSolanaDisconnect);
       adapter.off("error", this.handleSolanaError);
@@ -129,19 +203,22 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
   }
 
   private handleSolanaConnect = (publicKey: PublicKey): void => {
-    console.log(`[${this.walletName}] Solana wallet connected:`, publicKey.toBase58());
     this.solanaAddress = publicKey.toBase58();
   };
 
   private handleSolanaDisconnect = (): void => {
-    console.log(`[${this.walletName}] Solana wallet disconnected.`);
-    if (this.state !== Adapter.Status.DISCONNECTING && this.state !== Adapter.Status.DISCONNECTED) {
+    if (
+      this.state !== Adapter.Status.DISCONNECTING &&
+      this.state !== Adapter.Status.DISCONNECTED
+    ) {
       this.disconnect();
     }
   };
 
   private handleSolanaError = (error: any): void => {
-    console.error(`[${this.walletName}] Solana wallet error:`, error);
+    this.logger.error(`Solana wallet error`, error, {
+      wallet: this.walletName,
+    });
     this.state = Adapter.Status.ERROR;
     this.disconnect();
   };
@@ -161,27 +238,61 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
       throw new Error("Cannot connect to wallet in non-browser environment");
     }
 
+    // If we're already connected, return the current account
+    if (this.identity && this.state === Adapter.Status.CONNECTED) {
+      return {
+        owner: this.principal!.toText(),
+        subaccount: deriveAccountId(this.principal!),
+      };
+    }
+
+    // Try to restore from storage first
+    if (!this.identity) {
+      try {
+        await this.restoreFromStorage();
+        if (this.identity && this.state === Adapter.Status.CONNECTED) {
+          return {
+            owner: this.principal!.toText(),
+            subaccount: deriveAccountId(this.principal!),
+          };
+        }
+      } catch (error) {
+        this.logger.debug("Failed to restore from storage:", error);
+      }
+    }
+
     if (!this.solanaAdapter) {
       const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
-      console.log(`[${this.walletName}] Creating Solana adapter for network: ${network}`);
+      this.logger.debug(`Creating Solana adapter for network: ${network}`, {
+        wallet: this.walletName,
+      });
       this.solanaAdapter = this.createSolanaAdapter(network);
       this.setupWalletListeners();
     }
 
-    if (this.state === Adapter.Status.CONNECTING || this.state === Adapter.Status.CONNECTED) {
-      console.log(`[${this.walletName}] Already connecting or connected. State: ${this.state}`);
+    if (
+      this.state === Adapter.Status.CONNECTING ||
+      this.state === Adapter.Status.CONNECTED
+    ) {
       if (this.principal) {
-        return { owner: this.principal.toText(), subaccount: null };
+        return {
+          owner: this.principal.toText(),
+          subaccount: deriveAccountId(this.principal),
+        };
       } else {
-        throw new Error("Adapter is connecting, but principal not yet available.");
+        throw new Error(
+          "Adapter is connecting, but principal not yet available.",
+        );
       }
     }
-    if (this.state !== Adapter.Status.READY && this.state !== Adapter.Status.DISCONNECTED) {
+    if (
+      this.state !== Adapter.Status.READY &&
+      this.state !== Adapter.Status.DISCONNECTED
+    ) {
       throw new Error(`Cannot connect while in state: ${this.state}`);
     }
 
     this.state = Adapter.Status.CONNECTING;
-    console.log(`[${this.walletName}] Set state to CONNECTING`);
 
     try {
       const adapter = await this.solanaAdapter;
@@ -189,27 +300,33 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
         throw new Error("Solana adapter not initialized");
       }
 
-      console.log(`[${this.walletName}] Adapter obtained. Current ready state: ${adapter.readyState}`);
-
       if (!adapter.connected) {
-        console.log(`[${this.walletName}] Adapter not connected. Attempting connection...`);
         try {
-          if (this.id === 'walletconnectSiws' && adapter.readyState !== WalletReadyState.Loadable) {
-            console.warn(`[${this.walletName}] WalletConnect adapter not in Loadable state (${adapter.readyState}). Waiting briefly before connecting.`);
-            await new Promise(resolve => setTimeout(resolve, 200));
+          if (
+            this.id === "walletconnectSiws" &&
+            adapter.readyState !== WalletReadyState.Loadable
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
           }
 
           await adapter.connect();
-          console.log(`[${this.walletName}] Wallet connection successful.`);
-
         } catch (error) {
-          console.error(`[${this.walletName}] Wallet connection error:`, error);
+          this.logger.error(`Wallet connection error`, error as Error, {
+            wallet: this.walletName,
+          });
 
-          if (error.name === 'WalletWindowClosedError' || error.message?.includes('User rejected the request') || error.message?.includes('Wallet closed')) {
-            console.log(`[${this.walletName}] Connection cancelled by user (modal closed or rejected).`);
+          if (
+            error.name === "WalletWindowClosedError" ||
+            error.message?.includes("User rejected the request") ||
+            error.message?.includes("Wallet closed")
+          ) {
+            this.logger.warn(
+              `Connection cancelled by user (modal closed or rejected).`,
+              { wallet: this.walletName },
+            );
             this.state = Adapter.Status.DISCONNECTED;
-            const cancelError = new Error('Connection cancelled by user');
-            cancelError.name = 'UserCancelledError';
+            const cancelError = new Error("Connection cancelled by user");
+            cancelError.name = "UserCancelledError";
             throw cancelError;
           }
 
@@ -218,38 +335,55 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
             try {
               await adapter.disconnect();
             } catch (disconnectError) {
-              console.error(`[${this.walletName}] Error during cleanup disconnect:`, disconnectError);
+              this.logger.error(
+                `Error during cleanup disconnect`,
+                disconnectError as Error,
+                { wallet: this.walletName },
+              );
             }
           }
           throw error;
         }
       } else {
-        console.log(`[${this.walletName}] Adapter already connected.`);
+        this.logger.debug(`Adapter already connected.`, {
+          wallet: this.walletName,
+        });
       }
 
       if (!adapter.publicKey) {
-        throw new Error("Solana wallet connected, but public key is unavailable.");
+        throw new Error(
+          "Solana wallet connected, but public key is unavailable.",
+        );
       }
       this.solanaAddress = adapter.publicKey.toBase58();
-      console.log(`[${this.walletName}] Public key obtained:`, this.solanaAddress);
+      
+      // Store Solana address
+      await this.storage.set(`${this.id}-solana-address`, this.solanaAddress);
 
-      console.log(`[${this.walletName}] Starting SIWS login...`);
       const siwsResult = await this.performSiwsLogin(this.solanaAddress);
       this.identity = siwsResult.identity;
       this.principal = siwsResult.principal;
+
+      // Store the delegation chain
+      if (this.identity instanceof DelegationIdentity) {
+        await setDelegationChain(this.id, this.identity.getDelegation(), this.storage);
+      }
 
       if (!this.principal || this.principal.isAnonymous()) {
         throw new Error("SIWS login failed: Resulted in anonymous principal.");
       }
 
-      console.log(`[${this.walletName}] SIWS login successful. Principal: ${this.principal.toText()}`);
       this.state = Adapter.Status.CONNECTED;
-      return { owner: this.principal.toText(), subaccount: null };
-
+      return {
+        owner: this.principal.toText(),
+        subaccount: deriveAccountId(this.principal),
+      };
     } catch (error) {
-      console.error(`[${this.walletName}] Overall connect process failed:`, error);
+      this.logger.error(`Overall connect process failed`, error as Error, {
+        wallet: this.walletName,
+      });
 
-      if (error.name === 'UserCancelledError') {
+      if (error.name === "UserCancelledError") {
         this.state = Adapter.Status.DISCONNECTED;
       } else {
         this.state = Adapter.Status.ERROR;
@@ -263,21 +397,29 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
         try {
           const adapter = await this.solanaAdapter;
           if (adapter && adapter.connected) {
-            console.log(`[${this.walletName}] Cleaning up: disconnecting adapter.`);
             await adapter.disconnect();
           }
         } catch (cleanupError) {
-          console.error(`[${this.walletName}] Error during final cleanup disconnect:`, cleanupError);
+          this.logger.error(
+            `Error during final cleanup disconnect`,
+            cleanupError as Error,
+            { wallet: this.walletName },
+          );
         }
       }
 
+      await removeDelegationChain(this.id, this.storage);
+      await this.storage.remove(`${this.id}-solana-address`);
       throw error;
     }
   }
 
   async disconnect(): Promise<void> {
     if (!isBrowser) return;
-    if (this.state === Adapter.Status.DISCONNECTING || this.state === Adapter.Status.DISCONNECTED) {
+    if (
+      this.state === Adapter.Status.DISCONNECTING ||
+      this.state === Adapter.Status.DISCONNECTED
+    ) {
       return;
     }
     this.state = Adapter.Status.DISCONNECTING;
@@ -292,11 +434,17 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
         }
       }
     } catch (error) {
-      console.warn(`[${this.walletName}] Error during Solana disconnect:`, error);
+      this.logger.warn(`Error during Solana disconnect`, {
+        error,
+        wallet: this.walletName,
+      });
     } finally {
       this.identity = null;
       this.principal = null;
       this.solanaAddress = null;
+      this.sessionKey = null;
+      await removeDelegationChain(this.id, this.storage);
+      await this.storage.remove(`${this.id}-solana-address`);
       this.state = Adapter.Status.DISCONNECTED;
     }
   }
@@ -310,11 +458,9 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
 
   async getAccountId(): Promise<string> {
     const principal = await this.getPrincipal();
-    if (!principal) throw new Error("Principal not available to derive account ID");
-    return AccountIdentifier.fromPrincipal({
-      principal: Principal.fromText(principal),
-      subAccount: undefined,
-    }).toHex();
+    if (!principal)
+      throw new Error("Principal not available to derive account ID");
+    return deriveAccountId(principal);
   }
 
   async getSolanaAddress(): Promise<string> {
@@ -332,7 +478,7 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
       },
       icp: {
         address: this.principal?.toText(),
-        subaccount: await this.getAccountId(),
+        subaccount: deriveAccountId(this.principal),
       },
     };
   }
@@ -340,11 +486,13 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
   protected createActorInternal<T>(
     canisterId: string,
     idl: any,
-    options?: { requiresSigning?: boolean }
+    options?: { requiresSigning?: boolean },
   ): ActorSubclass<T> {
     const requiresSigning = options?.requiresSigning ?? true;
     if (requiresSigning && !this.identity) {
-      throw new Error("Cannot create signed actor: Not connected or SIWS flow not completed.");
+      throw new Error(
+        "Cannot create signed actor: Not connected or SIWS flow not completed.",
+      );
     }
 
     const agent = HttpAgent.createSync({
@@ -352,6 +500,10 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
       identity: this.identity,
       verifyQuerySignatures: this.config.verifyQuerySignatures,
     });
+
+    if (this.config.fetchRootKeys) {
+      agent.fetchRootKey();
+    }
 
     return Actor.createActor<T>(idl, { agent, canisterId });
   }
@@ -383,6 +535,9 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
       identity: identity ?? new AnonymousIdentity(),
       verifyQuerySignatures: this.config.verifyQuerySignatures,
     });
+    if (this.config.fetchRootKeys) {
+      agent.fetchRootKey();
+    }
     return Actor.createActor<SiwsProviderService>(siwsProviderIdlFactory, {
       agent,
       canisterId: this.config.siwsProviderCanisterId,
@@ -391,47 +546,39 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
 
   private async _prepareLogin(
     actor: SiwsProviderActor,
-    address: string
+    address: string,
   ): Promise<any> {
-    console.log(`[${this.walletName}] Calling siws_prepare_login with address:`, address);
     const prepareResult = await actor.siws_prepare_login(address);
-    console.log(`[${this.walletName}] Got prepare result:`, prepareResult);
-    
+
     if ("Err" in prepareResult) {
-      console.error(`[${this.walletName}] Prepare login error:`, prepareResult.Err);
+      const errorMsg = `Prepare login error: ${JSON.stringify(prepareResult.Err)}`;
+      this.logger.error(errorMsg, new Error(errorMsg));
       throw new Error(
-        `SIWS Prepare Login failed: ${JSON.stringify(prepareResult.Err)}`
+        `SIWS Prepare Login failed: ${JSON.stringify(prepareResult.Err)}`,
       );
     }
     return prepareResult.Ok;
   }
 
   private async _signSiwsMessage(siwsMessage: any): Promise<string> {
-    console.log(`[${this.walletName}] Formatting SIWS message...`);
     const messageText = formatSiwsMessage(siwsMessage);
-    console.log(`[${this.walletName}] Formatted message:`, messageText);
-    
     const messageBytes = new TextEncoder().encode(messageText);
-    console.log(`[${this.walletName}] Encoded message bytes`);
 
     if (!this.solanaAdapter) {
       throw new Error("Solana adapter not connected.");
     }
 
     const adapter = await this.solanaAdapter;
-    console.log(`[${this.walletName}] Got adapter for signing`);
 
     if (!("signMessage" in adapter)) {
       throw new Error(
-        `Connected Solana adapter '${this.walletName}' does not support signMessage.`
+        `Connected Solana adapter '${this.walletName}' does not support signMessage.`,
       );
     }
 
-    console.log(`[${this.walletName}] Signing message...`);
     const signerAdapter = adapter as typeof adapter &
       MessageSignerWalletAdapterProps<string>;
     const signatureBytes = await signerAdapter.signMessage(messageBytes);
-    console.log(`[${this.walletName}] Got signature bytes:`, signatureBytes);
 
     try {
       if (
@@ -457,20 +604,21 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
         return bs58.encode(new Uint8Array(signatureBytes as any));
       }
 
-      console.warn(
-        `[${this.walletName}] Unexpected signature bytes type:`,
-        typeof signatureBytes,
-        signatureBytes
+      this.logger.warn(
+        `Unexpected signature bytes type: ${typeof signatureBytes}`,
+        { signatureBytes, wallet: this.walletName },
       );
 
       const fallbackArray = Object.values(signatureBytes as any).map((val) =>
-        Number(val)
+        Number(val),
       );
       return bs58.encode(Uint8Array.from(fallbackArray));
     } catch (e) {
-      console.error(`[${this.walletName}] Error encoding signature:`, e);
+      this.logger.error(`Error encoding signature`, e as Error, {
+        wallet: this.walletName,
+      });
       throw new Error(
-        `Failed to encode signature from ${this.walletName}: ${e.message}`
+        `Failed to encode signature from ${this.walletName}: ${e.message}`,
       );
     }
   }
@@ -489,16 +637,19 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
     signature: string,
     address: string,
     sessionPublicKeyDer: ArrayBuffer,
-    siwsMessage: any
+    siwsMessage: any,
   ): Promise<any> {
     const loginResult = await actor.siws_login(
       signature,
       address,
       new Uint8Array(sessionPublicKeyDer),
-      siwsMessage.nonce
+      siwsMessage.nonce,
     );
-    if ("Err" in loginResult)
-      throw new Error(`SIWS Login failed: ${JSON.stringify(loginResult.Err)}`);
+    if ("Err" in loginResult) {
+      const errorMsg = `SIWS Login failed: ${JSON.stringify(loginResult.Err)}`;
+      this.logger.error(errorMsg, new Error(errorMsg));
+      throw new Error(errorMsg);
+    }
     return loginResult.Ok;
   }
 
@@ -506,31 +657,32 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
     actor: SiwsProviderActor,
     address: string,
     sessionPublicKeyDer: ArrayBuffer,
-    expiration: bigint
+    expiration: bigint,
   ): Promise<any> {
     const delegationResult = await actor.siws_get_delegation(
       address,
       new Uint8Array(sessionPublicKeyDer),
-      expiration
+      expiration,
     );
-    if ("Err" in delegationResult)
-      throw new Error(
-        `SIWS Get Delegation failed: ${JSON.stringify(delegationResult.Err)}`
-      );
+    if ("Err" in delegationResult) {
+      const errorMsg = `SIWS Get Delegation failed: ${JSON.stringify(delegationResult.Err)}`;
+      this.logger.error(errorMsg, new Error(errorMsg));
+      throw new Error(errorMsg);
+    }
     return delegationResult.Ok;
   }
 
   private _createDelegationIdentity(
     signedDelegation: any,
     sessionIdentity: Ed25519KeyIdentity,
-    userCanisterPublicKeyDer: ArrayBuffer
+    userCanisterPublicKeyDer: ArrayBuffer,
   ): DelegationIdentity {
     const delegation = new Delegation(
       signedDelegation.delegation.pubkey.slice().buffer,
       signedDelegation.delegation.expiration,
       signedDelegation.delegation.targets.length > 0
         ? signedDelegation.delegation.targets[0]
-        : undefined
+        : undefined,
     );
 
     const delegations = [
@@ -542,64 +694,46 @@ export class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implements Adapt
 
     const delegationChain = DelegationChain.fromDelegations(
       delegations,
-      userCanisterPublicKeyDer
+      userCanisterPublicKeyDer,
     );
 
     const identity = DelegationIdentity.fromDelegation(
       sessionIdentity,
-      delegationChain
+      delegationChain,
     );
 
     return identity;
   }
 
   private async performSiwsLogin(
-    address: string
+    address: string,
   ): Promise<{ identity: Identity; principal: Principal }> {
-    console.log(`[${this.walletName}] Starting SIWS login flow for address:`, address);
-    
     const anonSiwsActor = this.createSiwsProviderActor();
-    console.log(`[${this.walletName}] Created anonymous SIWS actor`);
-
-    console.log(`[${this.walletName}] Preparing login...`);
     const siwsMessage = await this._prepareLogin(anonSiwsActor, address);
-    console.log(`[${this.walletName}] Got SIWS message:`, siwsMessage);
-
-    console.log(`[${this.walletName}] Signing message...`);
     const signature = await this._signSiwsMessage(siwsMessage);
-    console.log(`[${this.walletName}] Got signature`);
-
-    console.log(`[${this.walletName}] Generating session identity...`);
-    const { sessionIdentity, sessionPublicKeyDer } = this._generateSessionIdentity();
-    console.log(`[${this.walletName}] Generated session identity`);
-
-    console.log(`[${this.walletName}] Logging in with SIWS...`);
+    const { sessionIdentity, sessionPublicKeyDer } =
+      this._generateSessionIdentity();
     const loginDetails = await this._loginWithSiws(
       anonSiwsActor,
       signature,
       address,
       sessionPublicKeyDer,
-      siwsMessage
+      siwsMessage,
     );
-    console.log(`[${this.walletName}] Login successful, got details:`, loginDetails);
 
-    console.log(`[${this.walletName}] Getting delegation...`);
     const signedDelegation = await this._getSiwsDelegation(
       anonSiwsActor,
       address,
       sessionPublicKeyDer,
-      loginDetails.expiration
+      loginDetails.expiration,
     );
-    console.log(`[${this.walletName}] Got delegation`);
 
-    console.log(`[${this.walletName}] Creating delegation identity...`);
     const identity = this._createDelegationIdentity(
       signedDelegation,
       sessionIdentity,
-      loginDetails.user_canister_pubkey.slice().buffer
+      loginDetails.user_canister_pubkey.slice().buffer,
     );
     const principal = identity.getPrincipal();
-    console.log(`[${this.walletName}] Created identity with principal:`, principal.toText());
 
     return { identity, principal };
   }

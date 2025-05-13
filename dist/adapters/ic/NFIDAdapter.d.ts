@@ -10,7 +10,9 @@ export declare class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implemen
     private signerAgent;
     private signer;
     private transport;
+    private storage;
     constructor(args: Adapter.ConstructorArgs);
+    private restoreFromStorage;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;
     unwrapResponse: <T extends any>(response: any) => T;
