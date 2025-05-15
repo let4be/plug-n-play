@@ -3,9 +3,11 @@ import { Adapter, GlobalPnpConfig } from './types/index.d';
 import { AdapterConfig, GetActorOptions } from './types/AdapterTypes';
 import { WalletAccount } from './types/WalletTypes';
 import { createPNPConfig } from './config';
-import { PnpEventEmitter, PnpEventType, PnpEventListener } from './events';
-export { createPNPConfig, type GlobalPnpConfig };
-export type { ActorSubclass, Adapter };
+import { PnpState, StateResponse, StateTransition } from './managers/StateManager';
+import { PnpEventEmitter, PnpEventType, PnpEvent, PnpEventListener } from './events';
+export { createPNPConfig, PnpState, PnpEventType };
+export type { GlobalPnpConfig, PnpEventListener, StateResponse, StateTransition, PnpEvent };
+export type { ActorSubclass, Adapter, GetActorOptions };
 export interface PnpInterface extends PnpEventEmitter {
     config: GlobalPnpConfig;
     adapter: AdapterConfig | null;

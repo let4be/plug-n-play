@@ -31,7 +31,7 @@ export function deriveAccountId(principal: string | Principal): string {
  * @param canisterId Canister ID
  * @param idl Interface definition
  * @param hostUrl Host URL for the agent
- * @param options Additional options like fetchRootKeys and verifyQuerySignatures
+ * @param options Additional options like fetchRootKey and verifyQuerySignatures
  * @returns Actor instance
  */
 export function createAnonymousActor<T>(options: {
@@ -46,7 +46,7 @@ export function createAnonymousActor<T>(options: {
     verifyQuerySignatures: adapter.config.verifyQuerySignatures,
   });
   
-  if (adapter.config.fetchRootKeys) {
+  if (adapter.config.fetchRootKey) {
     agent.fetchRootKey();
   }
 
@@ -132,14 +132,14 @@ export async function createAccountFromPrincipal(principal: string | Principal):
 /**
  * Helper to fetch root keys if configured to do so
  * @param agent HttpAgent to fetch root keys for
- * @param fetchRootKeys Boolean indicating whether to fetch root keys
+ * @param fetchRootKey Boolean indicating whether to fetch root keys
  * @param logPrefix Optional prefix for log messages
  */
-export async function fetchRootKeysIfNeeded(
+export async function fetchRootKeyIfNeeded(
   agent: HttpAgent,
-  fetchRootKeys: boolean | undefined,
+  fetchRootKey: boolean | undefined,
 ): Promise<void> {
-  if (fetchRootKeys) {
+  if (fetchRootKey) {
     try {
       await agent.fetchRootKey();
     } catch (e) {

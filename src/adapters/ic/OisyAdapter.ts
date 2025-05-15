@@ -14,14 +14,6 @@ import {
 import { OisyAdapterConfig } from "../../types/AdapterConfigs";
 
 export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapter.Interface {
-  private static readonly TRANSPORT_CONFIG = {
-    windowOpenerFeatures: "width=525,height=705",
-    establishTimeout: 45000,
-    disconnectTimeout: 45000,
-    statusPollingRate: 500,
-    detectNonClickEstablishment: false,
-  };
-
   private static readonly OISY_PRINCIPAL_KEY = "oisy_principal"; // Key for localStorage
 
   private signer: Signer | null = null;
@@ -35,9 +27,14 @@ export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapt
     const signerUrl = this.adapter.config.signerUrl ?? "https://oisy.com/sign";
     this.agent = HttpAgent.createSync({ host: this.adapter.config.hostUrl });
     
+    // Get transport config with defaults for missing values
+    const transportConfig = {
+      ...this.adapter.config.transport
+    };
+    
     this.transport = new PostMessageTransport({
       url: signerUrl,
-      ...OisyAdapter.TRANSPORT_CONFIG,
+      ...transportConfig,
     });
     
     this.signer = new Signer({
@@ -134,8 +131,8 @@ export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapt
         );
       }
 
-      if (this.adapter.config.fetchRootKeys) {
-        if (!this.signerAgent) throw new Error("Signer agent not ready for fetchRootKeys");
+      if (this.adapter.config.fetchRootKey) {
+        if (!this.signerAgent) throw new Error("Signer agent not ready for fetchRootKey");
         // Direct call to fetchRootKey for Signer Agent
         await this.signerAgent.fetchRootKey();
       }

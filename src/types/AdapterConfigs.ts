@@ -2,7 +2,7 @@ import { GlobalPnpConfig } from './index.d';
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
 export interface IIAdapterConfig extends GlobalPnpConfig {
-  identityProvider?: string;
+  localIdentityCanisterId?: string;
   maxTimeToLive?: bigint;
   derivationOrigin?: string;
   iiProviderUrl?: string;
@@ -22,6 +22,14 @@ export interface NFIDAdapterConfig extends GlobalPnpConfig {
   logoUrl?: string;
   maxTimeToLive?: bigint;
   derivationOrigin?: string;
+  signerUrl?: string;
+  transport?: {
+    windowOpenerFeatures?: string;
+    establishTimeout?: number;
+    disconnectTimeout?: number;
+    statusPollingRate?: number;
+    detectNonClickEstablishment?: boolean;
+  };
 }
 
 export interface OisyAdapterConfig extends GlobalPnpConfig {
@@ -29,6 +37,14 @@ export interface OisyAdapterConfig extends GlobalPnpConfig {
   logoUrl?: string;
   maxTimeToLive?: bigint;
   derivationOrigin?: string;
+  signerUrl?: string;
+  transport?: {
+    windowOpenerFeatures?: string;
+    establishTimeout?: number;
+    disconnectTimeout?: number;
+    statusPollingRate?: number;
+    detectNonClickEstablishment?: boolean;
+  };
 }
 
 export interface SiwsAdapterConfig extends GlobalPnpConfig {
@@ -57,11 +73,6 @@ export type AdapterSpecificConfig =
   | NFIDAdapterConfig 
   | OisyAdapterConfig 
   | SiwsAdapterConfig;
-
-// Type guard functions
-export function isIIAdapterConfig(config: GlobalPnpConfig): config is IIAdapterConfig {
-  return 'identityProvider' in config || 'derivationOrigin' in config;
-}
 
 export function isPlugAdapterConfig(config: GlobalPnpConfig): config is PlugAdapterConfig {
   return 'whitelist' in config || 'host' in config;

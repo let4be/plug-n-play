@@ -10,21 +10,21 @@ import { BaseAdapter } from "../BaseAdapter"; // Add BaseIcAdapter import
 import { 
   createAccountFromPrincipal, 
   isPrincipalAnonymous,
-  fetchRootKeysIfNeeded
+  fetchRootKeyIfNeeded
 } from "../../utils/icUtils"; // Import utility functions
 import { NFIDAdapterConfig } from "../../types/AdapterConfigs";
-import { IdbStorage, getDelegationChain, setDelegationChain, removeDelegationChain } from "@slide-computer/signer-storage";
+import { 
+  IdbStorage, 
+  getDelegationChain, 
+  setDelegationChain, 
+  removeDelegationChain,
+  getIdentity,
+  setIdentity,
+  removeIdentity
+} from "@slide-computer/signer-storage";
 
 // Extend BaseIcAdapter instead of just implementing Adapter.Interface
 export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
-  private static readonly TRANSPORT_CONFIG = {
-    windowOpenerFeatures: "width=525,height=705",
-    establishTimeout: 45000,
-    disconnectTimeout: 45000,
-    statusPollingRate: 500,
-    detectNonClickEstablishment: false, // Allow connection outside of click handler for auto-connect
-  };
-
   private agent: HttpAgent;
   private identity: DelegationIdentity | null = null;
   private sessionKey: Ed25519KeyIdentity | null = null;
@@ -39,10 +39,15 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     // Initialize storage
     this.storage = new IdbStorage();
 
-    // Create transport with the configured URL and non-click detection disabled
+    // Get transport config with defaults for missing values
+    const transportConfig = {
+      ...this.adapter.config.transport
+    };
+
+    // Create transport with the configured URL and transport settings
     this.transport = new PostMessageTransport({
       url: this.adapter.config.signerUrl,
-      ...NFIDAdapter.TRANSPORT_CONFIG,
+      ...transportConfig,
     });
 
     // Create signer with the transport
@@ -66,49 +71,61 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
 
     // Attempt to restore from storage
     this.restoreFromStorage().catch(error => {
-      console.debug("Failed to restore from storage:", error);
+      console.debug("[NFID] Failed to restore from storage on init:", error);
     });
   }
   
+  private async clearStoredSession(): Promise<void> {
+    this.identity = null;
+    this.signerAgent = null; 
+    this.sessionKey = null;
+    await removeIdentity("nfid", this.storage);
+    await removeDelegationChain("nfid", this.storage);
+    console.debug("[NFID] Cleared stored session data.");
+    // Do not change state here, let the caller manage it.
+  }
+
   private async restoreFromStorage(): Promise<void> {
     try {
+      console.debug("[NFID] Attempting to restore from storage...");
+      const storedSessionKey = await getIdentity("nfid", this.storage) as Ed25519KeyIdentity | undefined;
       const delegationChain = await getDelegationChain("nfid", this.storage);
       
-      if (!delegationChain) {
+      if (!storedSessionKey || !delegationChain) {
+        console.debug("[NFID] No session key or delegation chain found in storage.");
+        await this.clearStoredSession(); // Clear if partially stored
         return;
       }
 
       // Check if delegation is still valid
       const expiration = delegationChain.delegations[0].delegation.expiration;
       if (expiration < BigInt(Date.now() * 1_000_000)) {
-        await removeDelegationChain("nfid", this.storage);
+        console.debug("[NFID] Stored delegation chain has expired.");
+        await this.clearStoredSession();
         return;
       }
-      
-      // Generate a new session key
-      this.sessionKey = Ed25519KeyIdentity.generate();
 
-      // Create identity from stored delegation
+      console.debug("[NFID] Found valid session key and delegation chain, restoring...");
+      
+      this.sessionKey = storedSessionKey;
+
       this.identity = DelegationIdentity.fromDelegation(
         this.sessionKey,
         delegationChain
       );
 
-      // Update signer agent with restored principal
       this.signerAgent = SignerAgent.createSync({
-        signer: this.signer!,
+        signer: this.signer!, // Signer should be initialized in constructor
         account: this.identity.getPrincipal(),
         agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }),
       });
 
+      console.debug("[NFID] Successfully restored connection.");
       this.setState(Adapter.Status.CONNECTED);
     } catch (error) {
-      console.debug("[NFID] Error restoring from storage:", error);
-      // Clear potentially invalid state
-      this.identity = null;
-      this.signerAgent = null;
-      this.sessionKey = null;
-      await removeDelegationChain("nfid", this.storage);
+      console.error("[NFID] Error restoring from storage:", error);
+      await this.clearStoredSession();
+      // Do not change state here, allow connect flow to proceed if called from there
     }
   }
 
@@ -143,16 +160,26 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     }
 
     // Try to restore from storage first
-    if (!this.identity) {
-      try {
-        await this.restoreFromStorage();
-        if (this.identity && this.state === Adapter.Status.CONNECTED) {
-          return createAccountFromPrincipal(this.identity.getPrincipal());
+    // Note: restoreFromStorage itself doesn't throw on "not found", but connect should proceed.
+    // It will set state to CONNECTED if successful.
+    if (!this.identity) { // Check if not already connected by a previous restore attempt (e.g. in constructor)
+        try {
+            await this.restoreFromStorage();
+            if (this.identity && this.state === Adapter.Status.CONNECTED) {
+                 console.debug("[NFID] Connection restored from storage during connect call.");
+                 return createAccountFromPrincipal(this.identity.getPrincipal());
+            }
+        } catch (error) {
+            // restoreFromStorage already logs its errors and clears session.
+            console.debug("[NFID] Failed to restore from storage during connect call:", error);
         }
-      } catch (error) {
-        console.debug("[NFID] Failed to restore from storage:", error);
-      }
     }
+    
+    // If after attempting restore, we are now connected, return.
+    if (this.identity && this.state === Adapter.Status.CONNECTED) {
+      return createAccountFromPrincipal(this.identity.getPrincipal());
+    }
+
 
     this.setState(Adapter.Status.CONNECTING);
 
@@ -162,19 +189,26 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     }
 
     try {
+      console.debug("[NFID] Opening channel...");
       await this.signer.openChannel();
-      this.sessionKey = Ed25519KeyIdentity.generate();
+      
+      // Generate a new session key ONLY if one wasn't restored/doesn't exist.
+      // However, for NFID flow, a new session key is typically generated for each new delegation request.
+      this.sessionKey = Ed25519KeyIdentity.generate(); 
+      console.debug("[NFID] Generated new session key for delegation request.");
+
 
       const maxTimeToLiveNs =
         this.adapter.config.delegationTimeout !== undefined
           ? BigInt(Date.now() * 1_000_000) +
             BigInt(this.adapter.config.delegationTimeout)
           : BigInt(Date.now() * 1_000_000) +
-            BigInt(48 * 60 * 60 * 1_000_000_000);
+            BigInt(48 * 60 * 60 * 1_000_000_000); 
 
+      console.debug("[NFID] Requesting delegation...");
       const delegationChain = await this.signer.delegation({
         publicKey: this.sessionKey.getPublicKey().toDer(),
-        targets: Array.isArray(this.adapter.config.delegationTargets)
+        targets: Array.isArray(this.adapter.config.delegationTargets) 
           ? this.adapter.config.delegationTargets
               .filter((target): target is string => typeof target === 'string' && target.length > 0)
               .map(target => Principal.fromText(target))
@@ -182,6 +216,8 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
         maxTimeToLive: maxTimeToLiveNs,
       });
 
+      console.debug("[NFID] Storing session key and delegation chain...");
+      await setIdentity("nfid", this.sessionKey, this.storage);
       await setDelegationChain("nfid", delegationChain, this.storage);
 
       const delegationIdentity = DelegationIdentity.fromDelegation(
@@ -192,36 +228,31 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
       this.signerAgent = SignerAgent.createSync({
         signer: this.signer,
         account: delegationIdentity.getPrincipal(),
-        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }),
+        agent: HttpAgent.createSync({ host: this.adapter.config.hostUrl }), 
       });
 
       this.identity = delegationIdentity;
 
-      if (this.adapter.config.fetchRootKeys) {
-        await fetchRootKeysIfNeeded(this.agent, true);
+      if (this.adapter.config.fetchRootKey) { 
+        await fetchRootKeyIfNeeded(this.agent, true);
       }
 
       const principal = delegationIdentity.getPrincipal();
 
       if (isPrincipalAnonymous(principal)) {
         this.setState(Adapter.Status.READY);
-        this.identity = null;
-        this.signerAgent = null;
-        this.sessionKey = null;
-        await removeDelegationChain("nfid", this.storage);
+        await this.clearStoredSession(); // Clear stored session data
         throw new Error(
           "Failed to authenticate with NFID - got anonymous principal"
         );
       }
 
+      console.debug("[NFID] Successfully connected and session stored.");
       this.setState(Adapter.Status.CONNECTED);
       return createAccountFromPrincipal(principal);
     } catch (error) {
-      console.debug("[NFID] Connection failed:", error);
-      this.identity = null;
-      this.signerAgent = null;
-      this.sessionKey = null;
-      await removeDelegationChain("nfid", this.storage);
+      console.error("[NFID] Connection failed:", error);
+      await this.clearStoredSession(); // Ensure cleanup
       if (this.signer) {
         try {
           this.signer.closeChannel();
@@ -237,8 +268,8 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
   undelegatedActor<T>(canisterId: string, idlFactory: any): ActorSubclass<T> {
     const agent = HttpAgent.createSync({
       identity: this.identity,
-      host: this.adapter.config.hostUrl, // Access global hostUrl
-      verifyQuerySignatures: this.adapter.config.verifyQuerySignatures, // Access global verifyQuerySignatures
+      host: this.adapter.config.hostUrl, 
+      verifyQuerySignatures: this.adapter.config.verifyQuerySignatures, 
     });
     const actor = Actor.createActor<T>(idlFactory, {
       agent: agent,
@@ -302,24 +333,30 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
 
   // disconnect is handled by BaseIcAdapter, implement internal methods instead
   protected async disconnectInternal(): Promise<void> {
-    // Existing logic minus state changes and cleanup
-    this.identity = null;
-    this.signerAgent = null; // Nullify signer agent specific to connection
-    this.sessionKey = null;
-    await removeDelegationChain("nfid", this.storage);
+    console.debug("[NFID] Disconnecting internally...");
+    await this.clearStoredSession(); // Clear stored session data
+    // this.identity, this.signerAgent, this.sessionKey are nulled in clearStoredSession
 
     try {
       if (this.signer) {
-        this.signer.closeChannel(); // Close the channel if signer exists
+        this.signer.closeChannel(); 
       }
     } catch (error) {
       console.error("[NFID] Error during disconnect internal cleanup:", error);
     }
+    // State change will be handled by BaseAdapter's disconnect method
   }
 
   protected cleanupInternal(): void {
-    // Nullify resources specific to the connection/session
-    this.transport = null;
-    this.signer = null;
+    // This method is called by BaseAdapter's disconnect AFTER disconnectInternal.
+    // clearStoredSession already handles most of this.
+    // Nullify resources not directly tied to a specific session but to the adapter instance if needed.
+    // For NFID, most are session-specific or re-initialized.
+    // this.transport and this.signer are more persistent but re-created on constructor for now.
+    // If they were meant to survive across multiple connect/disconnect cycles without re-instantiation,
+    // their cleanup would be more nuanced. Given current structure, this is likely fine.
+    console.debug("[NFID] Performing final cleanup (transport/signer are re-created on new instance).");
+    // this.transport = null; // Potentially, if not re-created on new adapter instance
+    // this.signer = null;    // Potentially
   }
 }

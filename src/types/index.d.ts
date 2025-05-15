@@ -18,7 +18,7 @@ export interface PnpConfig {
   delegationTimeout: bigint;
   derivationOrigin: string;
   dfxNetwork: string;
-  fetchRootKeys: boolean;
+  fetchRootKey: boolean;
   hostUrl: string;
   localStorageKey: string;
   siwsProviderCanisterId: string;
@@ -37,16 +37,17 @@ export namespace Wallet {
 
 export interface GlobalPnpConfig {
   dfxNetwork?: string; // Useful for determining dev environment
+  replicaPort?: number;
   solanaNetwork?: string;
   hostUrl?: string;
   delegationTimeout?: bigint;
   delegationTargets?: string[];
   derivationOrigin?: string;
-  fetchRootKeys?: boolean;
+  fetchRootKey?: boolean;
   verifyQuerySignatures?: boolean;
   localStorageKey?: string;
   siwsProviderCanisterId?: string;
-  adapters?: Record<string, AdapterConfig>;
+  adapters?: Record<string, IIAdapterConfig | PlugAdapterConfig | NFIDAdapterConfig | OisyAdapterConfig | SiwsAdapterConfig>;
   logLevel?: LogLevel;
   persistenceKey?: string;
   storage?: Storage;
@@ -135,7 +136,7 @@ export class PNP {
   provider: Adapter.Interface | null;
   config: PnpConfig;
   actorCache: Map<string, ActorSubclass<any>>;
-  fetchRootKeys: boolean;
+  fetchRootKey: boolean;
 
   constructor(config?: PnpConfig);
 

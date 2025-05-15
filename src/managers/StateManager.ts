@@ -18,6 +18,12 @@ export interface StateTransition {
   context?: Record<string, any>;
 }
 
+export interface StateResponse {
+  type: "stateChange";
+  data: StateTransition;
+  timestamp: number;
+}
+
 export interface StateHistory {
   currentState: PnpState;
   transitions: StateTransition[];

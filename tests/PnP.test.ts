@@ -8,7 +8,7 @@ import { type Wallet } from '../src/types'; // Corrected path for types
 const mockConfig: PnpConfig = {
   hostUrl: "http://localhost:4943",
   verifyQuerySignatures: false,
-  fetchRootKeys: false,
+  fetchRootKey: false,
   // Add other necessary fields if required by BaseIcAdapter or IIAdapter
 };
 

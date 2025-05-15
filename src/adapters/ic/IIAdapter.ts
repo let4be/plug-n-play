@@ -5,11 +5,10 @@ import { AuthClient } from "@dfinity/auth-client";
 import { type Wallet, Adapter } from "../../types/index.d";
 import { BaseAdapter } from "../BaseAdapter";
 import { 
-  fetchRootKeysIfNeeded, 
+  fetchRootKeyIfNeeded, 
   createAccountFromPrincipal,
 } from "../../utils/icUtils"; // Import utility functions
 import { IIAdapterConfig } from '../../types/AdapterConfigs';
-import { isIIAdapterConfig } from '../../types/AdapterConfigs';
 
 // Extend BaseIcAdapter
 export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.Interface {
@@ -18,9 +17,6 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
   private agent: HttpAgent | null = null;
 
   constructor(args: { adapter: any; config: IIAdapterConfig }) {
-    if (!isIIAdapterConfig(args.config)) {
-      throw new Error('Invalid config for IIAdapter');
-    }
     super(args);
     this.initializeAuthClient();
   }
@@ -53,10 +49,18 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
     });
     
     // Use utility function for fetching root keys if needed
-    await fetchRootKeysIfNeeded(
+    console.log("fetchRootKey", this.config.fetchRootKey);
+    await fetchRootKeyIfNeeded(
       this.agent,
-      this.config.fetchRootKeys,
+      this.config.fetchRootKey,
     );
+  }
+
+  private getIdentityProvider(): string {
+    if (this.config.dfxNetwork === "local") {
+      return `${this.config.hostUrl}/?canisterId=${this.config.localIdentityCanisterId}`;
+    }
+    return "https://identity.ic0.app";
   }
 
   async connect(): Promise<Wallet.Account> {
@@ -70,10 +74,11 @@ export class IIAdapter extends BaseAdapter<IIAdapterConfig> implements Adapter.I
 
       const isAuthenticated = await this.authClient!.isAuthenticated();
       if (!isAuthenticated) {
+        console.log("idprovider", this.getIdentityProvider());
         return new Promise<Wallet.Account>((resolve, reject) => {
           this.authClient!.login({
             derivationOrigin: this.config.derivationOrigin,
-            identityProvider: this.config.identityProvider, 
+            identityProvider: this.getIdentityProvider(), 
             maxTimeToLive: BigInt((this.config.timeout ?? 1 * 24 * 60 * 60) * 1000 * 1000 * 1000), // Default 1 day
             onSuccess: async () => {
               try {

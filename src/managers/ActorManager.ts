@@ -7,7 +7,7 @@ import {
   PnpEventListener,
   EventEmitter,
 } from "../events";
-import { fetchRootKeysIfNeeded } from "../utils/icUtils";
+import { fetchRootKeyIfNeeded } from "../utils/icUtils";
 
 export class ActorManager implements PnpEventEmitter {
   private config: GlobalPnpConfig;
@@ -63,7 +63,7 @@ export class ActorManager implements PnpEventEmitter {
       host: this.config.hostUrl,
       verifyQuerySignatures: this.config.verifyQuerySignatures,
     });
-    fetchRootKeysIfNeeded(agent, this.config.fetchRootKeys);
+    fetchRootKeyIfNeeded(agent, this.config.fetchRootKey);
     const actor = Actor.createActor<T>(idl, {
       agent,
       canisterId,

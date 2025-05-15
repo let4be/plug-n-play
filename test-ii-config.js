@@ -3,7 +3,7 @@
 // Configuration object matching the structure you're using in your app
 const testConfig = {
   hostUrl: "https://icp0.io",
-  fetchRootKeys: false,
+  fetchRootKey: false,
   verifyQuerySignatures: false,
   derivationOrigin: "https://example.com",
   identityProvider: "https://identity.ic0.app",

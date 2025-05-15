@@ -85,6 +85,13 @@ export const Adapters: Record<string, Adapter.Config> = {
     adapter: OisyAdapter,
     config: {
       signerUrl: "https://oisy.com/sign",
+      transport: {
+        windowOpenerFeatures: "width=525,height=705",
+        establishTimeout: 45000,
+        disconnectTimeout: 45000,
+        statusPollingRate: 500,
+        detectNonClickEstablishment: false,
+      },
     },
   },
   nfid: {
@@ -97,8 +104,15 @@ export const Adapters: Record<string, Adapter.Config> = {
     adapter: NFIDAdapter,
     config: {
       signerUrl: "https://nfid.one/rpc",
-      fetchRootKeys: false,
+      fetchRootKey: false,
       verifyQuerySignatures: true,
+      transport: {
+        windowOpenerFeatures: "width=525,height=705",
+        establishTimeout: 45000,
+        disconnectTimeout: 45000,
+        statusPollingRate: 500,
+        detectNonClickEstablishment: false,
+      },
     },
   },
   ii: {
@@ -110,10 +124,10 @@ export const Adapters: Record<string, Adapter.Config> = {
     chain: 'ICP',
     adapter: IIAdapter,
     config: {
-      identityProvider: "https://identity.ic0.app",
-      fetchRootKeys: false,
+      fetchRootKey: false,
       verifyQuerySignatures: true,
       derivationOrigin: undefined,
+      localIdentityCanisterId: "rdmx6-jaaaa-aaaaa-aaadq-cai",
     },
   },
   plug: {

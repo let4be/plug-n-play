@@ -6,12 +6,14 @@ type AdapterUserOverride = Partial<Omit<Adapter.Config, 'id' | 'adapter' | 'conf
 };
 export interface CreatePnpArgs {
     dfxNetwork?: string;
+    replicaPort?: number;
+    frontendPort?: number;
     solanaNetwork?: string;
-    hostUrl?: string;
     delegationTimeout?: bigint;
     delegationTargets?: string[];
+    frontendCanisterId?: string;
     derivationOrigin?: string;
-    fetchRootKeys?: boolean;
+    fetchRootKey?: boolean;
     verifyQuerySignatures?: boolean;
     localStorageKey?: string;
     siwsProviderCanisterId?: string;
@@ -21,15 +23,14 @@ export interface CreatePnpArgs {
 }
 export declare const defaultCreateArgs: {
     dfxNetwork: string;
+    replicaPort: number;
+    frontendPort: number;
     solanaNetwork: string;
-    hostUrl: string;
     delegationTimeout: bigint;
     delegationTargets: any[];
-    derivationOrigin: string;
-    fetchRootKeys: boolean;
-    verifyQuerySignatures: boolean;
     localStorageKey: string;
-    siwsProviderCanisterId: any;
+    fetchRootKey: any;
+    verifyQuerySignatures: any;
     adapters: {
         [x: string]: Adapter.Config;
     };

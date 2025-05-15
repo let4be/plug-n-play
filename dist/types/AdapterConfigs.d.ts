@@ -1,7 +1,7 @@
 import { GlobalPnpConfig } from './index.d';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 export interface IIAdapterConfig extends GlobalPnpConfig {
-    identityProvider?: string;
+    localIdentityCanisterId?: string;
     maxTimeToLive?: bigint;
     derivationOrigin?: string;
     iiProviderUrl?: string;
@@ -19,12 +19,28 @@ export interface NFIDAdapterConfig extends GlobalPnpConfig {
     logoUrl?: string;
     maxTimeToLive?: bigint;
     derivationOrigin?: string;
+    signerUrl?: string;
+    transport?: {
+        windowOpenerFeatures?: string;
+        establishTimeout?: number;
+        disconnectTimeout?: number;
+        statusPollingRate?: number;
+        detectNonClickEstablishment?: boolean;
+    };
 }
 export interface OisyAdapterConfig extends GlobalPnpConfig {
     appName?: string;
     logoUrl?: string;
     maxTimeToLive?: bigint;
     derivationOrigin?: string;
+    signerUrl?: string;
+    transport?: {
+        windowOpenerFeatures?: string;
+        establishTimeout?: number;
+        disconnectTimeout?: number;
+        statusPollingRate?: number;
+        detectNonClickEstablishment?: boolean;
+    };
 }
 export interface SiwsAdapterConfig extends GlobalPnpConfig {
     providerCanisterId?: string;
@@ -44,7 +60,6 @@ export interface SiwsAdapterConfig extends GlobalPnpConfig {
     appIcons?: string[];
 }
 export type AdapterSpecificConfig = IIAdapterConfig | PlugAdapterConfig | NFIDAdapterConfig | OisyAdapterConfig | SiwsAdapterConfig;
-export declare function isIIAdapterConfig(config: GlobalPnpConfig): config is IIAdapterConfig;
 export declare function isPlugAdapterConfig(config: GlobalPnpConfig): config is PlugAdapterConfig;
 export declare function isNFIDAdapterConfig(config: GlobalPnpConfig): config is NFIDAdapterConfig;
 export declare function isOisyAdapterConfig(config: GlobalPnpConfig): config is OisyAdapterConfig;

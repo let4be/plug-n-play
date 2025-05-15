@@ -32,7 +32,15 @@ import { BaseAdapter } from "../BaseAdapter";
 import { SiwsAdapterConfig } from "../../types/AdapterConfigs";
 import { TokenManager, SplTokenBalance } from "../../managers/SplTokenManager";
 import { deriveAccountId } from "../../utils/icUtils";
-import { IdbStorage, getDelegationChain, setDelegationChain, removeDelegationChain } from "@slide-computer/signer-storage";
+import { 
+  IdbStorage, 
+  getDelegationChain, 
+  setDelegationChain, 
+  removeDelegationChain,
+  getIdentity,
+  setIdentity,
+  removeIdentity
+} from "@slide-computer/signer-storage";
 
 // Check if we're in a browser environment
 const isBrowser =
@@ -95,22 +103,30 @@ export class SiwsAdapter
 
   private async restoreFromStorage(): Promise<void> {
     try {
+      this.logger.debug(`[${this.id}] Attempting to restore from storage...`);
+      // Explicitly type assertion as we expect Ed25519 for SIWS
+      const storedSessionKey = await getIdentity(this.id, this.storage) as Ed25519KeyIdentity | undefined;
       const delegationChain = await getDelegationChain(this.id, this.storage);
-      if (!delegationChain) {
+      const storedSolanaAddress = await this.storage.get(`${this.id}-solana-address`);
+
+      if (!storedSessionKey || !delegationChain) {
+        this.logger.debug(`[${this.id}] No session key or delegation chain found in storage.`);
+        await this.clearStoredSession();
         return;
       }
 
       // Check if delegation is still valid
       const expiration = delegationChain.delegations[0].delegation.expiration;
       if (expiration < BigInt(Date.now() * 1_000_000)) {
-        await removeDelegationChain(this.id, this.storage);
+        this.logger.debug(`[${this.id}] Stored delegation chain has expired.`);
+        await this.clearStoredSession();
         return;
       }
 
-      // Generate a new session key
-      this.sessionKey = Ed25519KeyIdentity.generate();
+      this.logger.debug(`[${this.id}] Found valid session key and delegation chain, restoring...`);
+      
+      this.sessionKey = storedSessionKey;
 
-      // Create identity from stored delegation
       this.identity = DelegationIdentity.fromDelegation(
         this.sessionKey,
         delegationChain
@@ -118,22 +134,33 @@ export class SiwsAdapter
 
       this.principal = this.identity.getPrincipal();
 
-      // Try to get Solana address from storage
-      const storedAddress = await this.storage.get(`${this.id}-solana-address`);
-      if (storedAddress && typeof storedAddress === 'string') {
-        this.solanaAddress = storedAddress;
+      if (storedSolanaAddress && typeof storedSolanaAddress === 'string') {
+        this.solanaAddress = storedSolanaAddress;
+      } else {
+        // If solana address is missing, something is inconsistent. Clear session.
+        this.logger.warn(`[${this.id}] Solana address missing from storage during restore. Clearing session.`);
+        await this.clearStoredSession();
+        return;
       }
-
+      
+      this.logger.debug(`[${this.id}] Successfully restored connection.`);
       this.state = Adapter.Status.CONNECTED;
     } catch (error) {
-      this.logger.debug("Error restoring from storage:", error);
-      // Clear potentially invalid state
-      this.identity = null;
-      this.principal = null;
-      this.solanaAddress = null;
-      this.sessionKey = null;
-      await removeDelegationChain(this.id, this.storage);
+      this.logger.error(`[${this.id}] Error restoring from storage:`, error);
+      await this.clearStoredSession();
     }
+  }
+
+  private async clearStoredSession(): Promise<void> {
+    this.identity = null;
+    this.principal = null;
+    this.solanaAddress = null;
+    this.sessionKey = null;
+    await removeIdentity(this.id, this.storage);
+    await removeDelegationChain(this.id, this.storage);
+    await this.storage.remove(`${this.id}-solana-address`);
+    this.state = Adapter.Status.READY; // Or DISCONNECTED if appropriate
+     this.logger.debug(`[${this.id}] Cleared stored session data.`);
   }
 
   private async createSolanaAdapter(
@@ -239,10 +266,10 @@ export class SiwsAdapter
     }
 
     // If we're already connected, return the current account
-    if (this.identity && this.state === Adapter.Status.CONNECTED) {
+    if (this.identity && this.principal && this.state === Adapter.Status.CONNECTED) {
       return {
-        owner: this.principal!.toText(),
-        subaccount: deriveAccountId(this.principal!),
+        owner: this.principal.toText(),
+        subaccount: deriveAccountId(this.principal),
       };
     }
 
@@ -250,16 +277,27 @@ export class SiwsAdapter
     if (!this.identity) {
       try {
         await this.restoreFromStorage();
-        if (this.identity && this.state === Adapter.Status.CONNECTED) {
+        if (this.identity && this.principal && this.state === Adapter.Status.CONNECTED) {
           return {
-            owner: this.principal!.toText(),
-            subaccount: deriveAccountId(this.principal!),
+            owner: this.principal.toText(),
+            subaccount: deriveAccountId(this.principal),
           };
         }
       } catch (error) {
-        this.logger.debug("Failed to restore from storage:", error);
+        this.logger.debug(`[${this.id}] Failed to restore from storage during connect attempt:`, error);
+        // Ensure partial state is cleared if restore fails mid-connect
+        await this.clearStoredSession();
       }
     }
+    
+    // If after attempting restore, we are now connected, return.
+    if (this.identity && this.principal && this.state === Adapter.Status.CONNECTED) {
+      return {
+        owner: this.principal.toText(),
+        subaccount: deriveAccountId(this.principal),
+      };
+    }
+
 
     if (!this.solanaAdapter) {
       const network = this.config.solanaNetwork || WalletAdapterNetwork.Mainnet;
@@ -271,23 +309,30 @@ export class SiwsAdapter
     }
 
     if (
-      this.state === Adapter.Status.CONNECTING ||
-      this.state === Adapter.Status.CONNECTED
+      this.state === Adapter.Status.CONNECTING // Already connecting, avoid race conditions
     ) {
-      if (this.principal) {
-        return {
-          owner: this.principal.toText(),
-          subaccount: deriveAccountId(this.principal),
-        };
-      } else {
-        throw new Error(
-          "Adapter is connecting, but principal not yet available.",
-        );
-      }
+       this.logger.warn(`[${this.id}] Connect called while already connecting. Waiting for existing attempt.`);
+       // Potentially return a promise that resolves with the ongoing connection result
+       // For now, let it fall through, but this might need robust handling for concurrent calls
+       // For simplicity, we'll assume connect isn't called concurrently in a problematic way.
+       // Or throw: throw new Error("Adapter is already in the process of connecting.");
     }
-    if (
-      this.state !== Adapter.Status.READY &&
-      this.state !== Adapter.Status.DISCONNECTED
+    
+    // Reset state if it was e.g. ERROR
+    // Allow connect from READY, INIT, or DISCONNECTED
+    if (this.state !== Adapter.Status.READY && 
+        this.state !== Adapter.Status.INIT && 
+        this.state !== Adapter.Status.DISCONNECTED) {
+        // If in an unexpected state like CONNECTING or ERROR, reset to READY before proceeding
+        // Or potentially throw, depending on desired handling of odd states.
+        this.logger.warn(`[${this.id}] Connect called from unexpected state ${this.state}. Resetting to READY.`);
+        this.state = Adapter.Status.READY;
+    }
+
+    // Check again if we can connect (covers states like CONNECTING)
+    if (this.state !== Adapter.Status.READY &&
+        this.state !== Adapter.Status.DISCONNECTED &&
+        this.state !== Adapter.Status.INIT
     ) {
       throw new Error(`Cannot connect while in state: ${this.state}`);
     }
@@ -363,16 +408,26 @@ export class SiwsAdapter
       const siwsResult = await this.performSiwsLogin(this.solanaAddress);
       this.identity = siwsResult.identity;
       this.principal = siwsResult.principal;
+      this.sessionKey = siwsResult.sessionKey; // Capture the sessionKey
 
-      // Store the delegation chain
+      // Store the session key and delegation chain
+      if (this.sessionKey) {
+        await setIdentity(this.id, this.sessionKey, this.storage);
+      }
       if (this.identity instanceof DelegationIdentity) {
         await setDelegationChain(this.id, this.identity.getDelegation(), this.storage);
+      } else {
+         this.logger.warn(`[${this.id}] SIWS login did not result in a DelegationIdentity. Cannot store delegation chain.`);
+         // This case should ideally not happen if SIWS is successful
       }
+
 
       if (!this.principal || this.principal.isAnonymous()) {
+        await this.clearStoredSession(); // Clear any partial data
         throw new Error("SIWS login failed: Resulted in anonymous principal.");
       }
-
+      
+      this.logger.debug(`[${this.id}] Successfully connected and session stored.`);
       this.state = Adapter.Status.CONNECTED;
       return {
         owner: this.principal.toText(),
@@ -382,6 +437,8 @@ export class SiwsAdapter
       this.logger.error(`Overall connect process failed`, error as Error, {
         wallet: this.walletName,
       });
+      
+      await this.clearStoredSession(); // Ensure cleanup on any connect error
 
       if (error.name === "UserCancelledError") {
         this.state = Adapter.Status.DISCONNECTED;
@@ -389,15 +446,16 @@ export class SiwsAdapter
         this.state = Adapter.Status.ERROR;
       }
 
-      this.identity = null;
-      this.principal = null;
-      this.solanaAddress = null;
+      // No need to set identity/principal to null here, clearStoredSession does it.
 
       if (this.solanaAdapter) {
         try {
           const adapter = await this.solanaAdapter;
           if (adapter && adapter.connected) {
-            await adapter.disconnect();
+            // Don't disconnect if the error was UserCancelled, as it might already be handled by the wallet adapter
+            if (error.name !== "UserCancelledError") {
+                 await adapter.disconnect();
+            }
           }
         } catch (cleanupError) {
           this.logger.error(
@@ -408,8 +466,6 @@ export class SiwsAdapter
         }
       }
 
-      await removeDelegationChain(this.id, this.storage);
-      await this.storage.remove(`${this.id}-solana-address`);
       throw error;
     }
   }
@@ -422,15 +478,16 @@ export class SiwsAdapter
     ) {
       return;
     }
+    this.logger.debug(`[${this.id}] Disconnecting...`);
     this.state = Adapter.Status.DISCONNECTING;
 
     try {
       if (this.solanaAdapter) {
         const adapter = await this.solanaAdapter;
         if (adapter.connected) {
-          this.removeWalletListeners();
+          this.removeWalletListeners(); // Remove listeners before disconnect
           await adapter.disconnect();
-          this.setupWalletListeners();
+          this.setupWalletListeners(); // Re-attach listeners if adapter might be reused
         }
       }
     } catch (error) {
@@ -439,13 +496,9 @@ export class SiwsAdapter
         wallet: this.walletName,
       });
     } finally {
-      this.identity = null;
-      this.principal = null;
-      this.solanaAddress = null;
-      this.sessionKey = null;
-      await removeDelegationChain(this.id, this.storage);
-      await this.storage.remove(`${this.id}-solana-address`);
+      await this.clearStoredSession();
       this.state = Adapter.Status.DISCONNECTED;
+      this.logger.debug(`[${this.id}] Disconnected and session cleared.`);
     }
   }
 
@@ -501,7 +554,7 @@ export class SiwsAdapter
       verifyQuerySignatures: this.config.verifyQuerySignatures,
     });
 
-    if (this.config.fetchRootKeys) {
+    if (this.config.fetchRootKey) {
       agent.fetchRootKey();
     }
 
@@ -535,7 +588,7 @@ export class SiwsAdapter
       identity: identity ?? new AnonymousIdentity(),
       verifyQuerySignatures: this.config.verifyQuerySignatures,
     });
-    if (this.config.fetchRootKeys) {
+    if (this.config.fetchRootKey) {
       agent.fetchRootKey();
     }
     return Actor.createActor<SiwsProviderService>(siwsProviderIdlFactory, {
@@ -707,12 +760,15 @@ export class SiwsAdapter
 
   private async performSiwsLogin(
     address: string,
-  ): Promise<{ identity: Identity; principal: Principal }> {
+  ): Promise<{ identity: Identity; principal: Principal; sessionKey: Ed25519KeyIdentity }> {
     const anonSiwsActor = this.createSiwsProviderActor();
     const siwsMessage = await this._prepareLogin(anonSiwsActor, address);
     const signature = await this._signSiwsMessage(siwsMessage);
-    const { sessionIdentity, sessionPublicKeyDer } =
-      this._generateSessionIdentity();
+    
+    // sessionIdentity here is the specific Ed25519KeyIdentity for this session
+    const { sessionIdentity, sessionPublicKeyDer } = 
+      this._generateSessionIdentity(); 
+      
     const loginDetails = await this._loginWithSiws(
       anonSiwsActor,
       signature,
@@ -728,13 +784,14 @@ export class SiwsAdapter
       loginDetails.expiration,
     );
 
-    const identity = this._createDelegationIdentity(
+    // This is the DelegationIdentity
+    const delegationIdentity = this._createDelegationIdentity(
       signedDelegation,
-      sessionIdentity,
+      sessionIdentity, // Pass the Ed25519KeyIdentity here
       loginDetails.user_canister_pubkey.slice().buffer,
     );
-    const principal = identity.getPrincipal();
+    const principal = delegationIdentity.getPrincipal();
 
-    return { identity, principal };
+    return { identity: delegationIdentity, principal, sessionKey: sessionIdentity };
   }
 }

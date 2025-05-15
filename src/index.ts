@@ -7,12 +7,14 @@ import { ConnectionManager } from './managers/ConnectionManager';
 import { ActorManager } from './managers/ActorManager';
 import { ConfigManager } from './managers/ConfigManager';
 import { ErrorManager, LogLevel } from './managers/ErrorManager';
-import { StateManager, PnpState } from './managers/StateManager';
-import { PnpEventEmitter, PnpEventType, PnpEventListener, EventEmitter } from './events';
+import { StateManager, PnpState, StateResponse, StateTransition } from './managers/StateManager';
+import { EventEmitter, PnpEventEmitter, PnpEventType } from './events';
+import type { PnpEvent, PnpEventListener } from './events';
 
 // Re-export config types and creation function for easier consumption
-export { createPNPConfig, type GlobalPnpConfig };
-export type { ActorSubclass, Adapter };
+export { createPNPConfig, PnpState, PnpEventType };
+export type { GlobalPnpConfig, PnpEventListener, StateResponse, StateTransition, PnpEvent };
+export type { ActorSubclass, Adapter, GetActorOptions};
 
 // Define the PNP class directly here
 export interface PnpInterface extends PnpEventEmitter {
@@ -160,6 +162,11 @@ export class PNP implements PnpInterface {
 
   async connect(walletId?: string) {
     try {
+      if (this.stateManager.getCurrentState() === PnpState.CONNECTED) {
+        // Already connected, return current account or handle as appropriate
+        this.errorManager.info("Already connected.");
+        return this.account;
+      }
       await this.stateManager.transitionTo(PnpState.CONNECTING);
       const account = await this.connectionManager.connect(walletId);
       this.actorManager.setProvider(this.connectionManager.provider);

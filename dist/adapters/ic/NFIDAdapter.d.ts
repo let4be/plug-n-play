@@ -3,7 +3,6 @@ import { Wallet, Adapter } from '../../types/index.d';
 import { BaseAdapter } from '../BaseAdapter';
 import { NFIDAdapterConfig } from '../../types/AdapterConfigs';
 export declare class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapter.Interface {
-    private static readonly TRANSPORT_CONFIG;
     private agent;
     private identity;
     private sessionKey;
@@ -12,6 +11,7 @@ export declare class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implemen
     private transport;
     private storage;
     constructor(args: Adapter.ConstructorArgs);
+    private clearStoredSession;
     private restoreFromStorage;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;

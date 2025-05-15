@@ -24,7 +24,7 @@ export const initializePNP = () => {
         hostUrl: 'https://icp0.io', // Mainnet endpoint
         
         // Security settings
-        fetchRootKeys: false, // Set to true only for local development
+        fetchRootKey: false, // Set to true only for local development
         verifyQuerySignatures: true,
         
         // Delegation settings

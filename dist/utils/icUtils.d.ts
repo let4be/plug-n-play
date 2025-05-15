@@ -12,7 +12,7 @@ export declare function deriveAccountId(principal: string | Principal): string;
  * @param canisterId Canister ID
  * @param idl Interface definition
  * @param hostUrl Host URL for the agent
- * @param options Additional options like fetchRootKeys and verifyQuerySignatures
+ * @param options Additional options like fetchRootKey and verifyQuerySignatures
  * @returns Actor instance
  */
 export declare function createAnonymousActor<T>(options: {
@@ -53,10 +53,10 @@ export declare function createAccountFromPrincipal(principal: string | Principal
 /**
  * Helper to fetch root keys if configured to do so
  * @param agent HttpAgent to fetch root keys for
- * @param fetchRootKeys Boolean indicating whether to fetch root keys
+ * @param fetchRootKey Boolean indicating whether to fetch root keys
  * @param logPrefix Optional prefix for log messages
  */
-export declare function fetchRootKeysIfNeeded(agent: HttpAgent, fetchRootKeys: boolean | undefined): Promise<void>;
+export declare function fetchRootKeyIfNeeded(agent: HttpAgent, fetchRootKey: boolean | undefined): Promise<void>;
 /**
  * Creates a cache key for actor caching
  * @param walletName Wallet name

@@ -13,12 +13,14 @@ type AdapterUserOverride = Partial<Omit<Adapter.Config, 'id' | 'adapter' | 'conf
 // Main configuration for the PNP library
 export interface CreatePnpArgs {
   dfxNetwork?: string; // Useful for determining dev environment
+  replicaPort?: number;
+  frontendPort?: number;
   solanaNetwork?: string;
-  hostUrl?: string;
   delegationTimeout?: bigint;
   delegationTargets?: string[];
+  frontendCanisterId?: string;
   derivationOrigin?: string;
-  fetchRootKeys?: boolean; // Common agent setting
+  fetchRootKey?: boolean; // Common agent setting
   verifyQuerySignatures?: boolean; // Common agent setting
   localStorageKey?: string;
   siwsProviderCanisterId?: string; // Add SIWS provider Canister ID here
@@ -31,15 +33,14 @@ export interface CreatePnpArgs {
 export const defaultCreateArgs = {
   // Global defaults matching user's updated PnpConfig
   dfxNetwork: "ic",
+  replicaPort: 8080,
+  frontendPort: 3000,
   solanaNetwork: "mainnet",
-  hostUrl: "https://icp0.io",
   delegationTimeout: BigInt(24 * 60 * 60 * 1000 * 1000 * 1000), // 1 day
   delegationTargets: [],
-  derivationOrigin: typeof window !== "undefined" ? window.location.origin : "",
-  fetchRootKeys: false, // Default for global setting
-  verifyQuerySignatures: true, // Default for global setting
-  localStorageKey: "pnpConnectedWallet",
-  siwsProviderCanisterId: undefined,
+  localStorageKey: "pnpState",
+  fetchRootKey: undefined,
+  verifyQuerySignatures: undefined,
   adapters: {
     ...Adapters,
   },
@@ -48,9 +49,27 @@ export const defaultCreateArgs = {
 // Define the return type more explicitly to include adapters (which now contain config)
 export type FullPNPConfig = typeof defaultCreateArgs;
 
+function getHostUrl(dfxNetwork: string, replicaPort: number): string {
+  if (dfxNetwork === "local") {
+    return `http://127.0.0.1:${replicaPort || defaultCreateArgs.replicaPort}`;
+  }
+  return "https://icp0.io";
+}
+
 // Function to create a complete configuration object by merging user input with defaults
 export function createPNPConfig(config: CreatePnpArgs = {}): GlobalPnpConfig {
   const finalAdapters: Record<string, Adapter.Config> = {};
+  const hostUrl = getHostUrl(config.dfxNetwork, config.replicaPort);
+
+  function getDerivationOrigin(): string {
+    if (config.frontendCanisterId && hostUrl.includes("icp0.io")) {
+      return `https://${config.frontendCanisterId}.icp0.io`;
+    }
+  
+    return `http://localhost:${config.frontendPort || defaultCreateArgs.frontendPort}`;
+  }
+  
+  const derivationOrigin = getDerivationOrigin();
 
   // Iterate over the DEFAULT adapters defined in Adapters and SolAdapters
   for (const adapterId in defaultCreateArgs.adapters) {
@@ -73,16 +92,17 @@ export function createPNPConfig(config: CreatePnpArgs = {}): GlobalPnpConfig {
               ...defaultAdapterInfo.config,
 
               // 2. Apply global overrides from the main config object
-              hostUrl: config.hostUrl || defaultCreateArgs.hostUrl,
+              hostUrl: hostUrl,
               // Use nullish coalescing (??) for booleans to allow 'false' override
-              fetchRootKeys: config.fetchRootKeys ?? defaultCreateArgs.fetchRootKeys,
-              verifyQuerySignatures: config.verifyQuerySignatures ?? defaultCreateArgs.verifyQuerySignatures,
+              fetchRootKey: config.fetchRootKey ?? config.dfxNetwork === "local" ? true : false,
+              verifyQuerySignatures: config.verifyQuerySignatures ?? config.dfxNetwork === "local" ? false : true,
               delegationTimeout: config.delegationTimeout || defaultCreateArgs.delegationTimeout,
               delegationTargets: config.delegationTargets || defaultCreateArgs.delegationTargets,
-              derivationOrigin: config.derivationOrigin || defaultCreateArgs.derivationOrigin,
+              frontendCanisterId: config.frontendCanisterId,
+              derivationOrigin: config.derivationOrigin || derivationOrigin,
               localStorageKey: config.localStorageKey || defaultCreateArgs.localStorageKey,
               // Merge global SIWS ID if provided, otherwise use default adapter config's value (if any) or default global
-              siwsProviderCanisterId: config.siwsProviderCanisterId || defaultAdapterInfo.config?.siwsProviderCanisterId || defaultCreateArgs.siwsProviderCanisterId,
+              siwsProviderCanisterId: config.siwsProviderCanisterId,
 
               // 3. Apply adapter-specific overrides provided DIRECTLY by the user (e.g., projectId, appName)
               // Filter out 'enabled' and 'config' as they are handled separately/next
@@ -110,17 +130,18 @@ export function createPNPConfig(config: CreatePnpArgs = {}): GlobalPnpConfig {
   const finalGlobalConfig: GlobalPnpConfig = {
     // Global settings merged from user input and defaults
     dfxNetwork: config.dfxNetwork || defaultCreateArgs.dfxNetwork,
-    hostUrl: config.hostUrl || defaultCreateArgs.hostUrl,
+    replicaPort: config.replicaPort || defaultCreateArgs.replicaPort,
+    hostUrl: hostUrl,
     delegationTimeout: config.delegationTimeout || defaultCreateArgs.delegationTimeout,
     delegationTargets: config.delegationTargets || defaultCreateArgs.delegationTargets,
-    derivationOrigin: config.derivationOrigin || defaultCreateArgs.derivationOrigin,
-    fetchRootKeys: config.fetchRootKeys ?? defaultCreateArgs.fetchRootKeys,
-    verifyQuerySignatures: config.verifyQuerySignatures ?? defaultCreateArgs.verifyQuerySignatures,
+    derivationOrigin: config.derivationOrigin || derivationOrigin,
+    fetchRootKey: config.fetchRootKey ?? config.dfxNetwork === "local" ? true : false,
+    verifyQuerySignatures: config.verifyQuerySignatures ?? config.dfxNetwork === "local" ? false : true,
     localStorageKey: config.localStorageKey || defaultCreateArgs.localStorageKey,
-    siwsProviderCanisterId: config.siwsProviderCanisterId || defaultCreateArgs.siwsProviderCanisterId,
+    siwsProviderCanisterId: config.siwsProviderCanisterId,
     // The processed adapters map
     adapters: finalAdapters,
   };
-  
+
   return finalGlobalConfig;
 }

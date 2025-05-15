@@ -65,7 +65,7 @@ const createSiwsActor = (canisterId, options) => {
 const pnp = createPNP({
   // Global settings
   hostUrl: "http://localhost:4943", // Defaults to https://icp0.io, set to your local replica for local dev
-  fetchRootKeys: false, // Default is false, set true for local dev
+  fetchRootKey: false, // Default is false, set true for local dev
   verifyQuerySignatures: false, // Default is true, set false for local dev
   derivationOrigin: "http://localhost:5173", // Optional: Set for local dev (required by II)
   dfxNetwork: "local", // Optional: Set for local dev
@@ -239,7 +239,7 @@ async function transfer(to: string, amount: bigint) {
 3.  Set appropriate delegation timeouts in your identity provider (like Internet Identity) based on your security requirements.
 4.  Implement user-friendly error handling for all wallet operations (connection failures, rejected signatures, etc.).
 5.  Clean up resources by calling `disconnect` when the user logs out or closes the application session.
-6.  For local development, ensure `hostUrl`, `fetchRootKeys`, `verifyQuerySignatures`, and adapter-specific settings (like II `identityProvider`) are configured correctly for your local replica.
+6.  For local development, ensure `hostUrl`, `fetchRootKey`, `verifyQuerySignatures`, and adapter-specific settings (like II `identityProvider`) are configured correctly for your local replica.
 7.  When using SIWS adapters, ensure the required peer dependencies are installed and the `siwsProviderCanisterId` and `siwsProviderCreateActor` are correctly configured.
 8.  For WalletConnect, always obtain a unique project ID from WalletConnect Cloud and provide it in your configuration.
 

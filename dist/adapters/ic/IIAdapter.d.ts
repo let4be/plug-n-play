@@ -11,6 +11,7 @@ export declare class IIAdapter extends BaseAdapter<IIAdapterConfig> implements A
     });
     private initializeAuthClient;
     private initAgent;
+    private getIdentityProvider;
     connect(): Promise<Wallet.Account>;
     private _continueLogin;
     isConnected(): Promise<boolean>;

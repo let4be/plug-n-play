@@ -21,6 +21,7 @@ export declare class SiwsAdapter extends BaseAdapter<SiwsAdapterConfig> implemen
         config: SiwsAdapterConfig;
     });
     private restoreFromStorage;
+    private clearStoredSession;
     private createSolanaAdapter;
     private setupWalletListeners;
     private removeWalletListeners;
