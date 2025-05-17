@@ -17,6 +17,7 @@ export declare abstract class BaseAdapter<T extends AdapterSpecificConfig = Adap
         logger?: ErrorManager;
     });
     protected setState(newState: Adapter.Status): void;
+    openChannel(): Promise<void>;
     getState(): Adapter.Status;
     getAccountId(): Promise<string>;
     abstract isConnected(): Promise<boolean>;

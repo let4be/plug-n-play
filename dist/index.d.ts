@@ -44,6 +44,7 @@ export declare class PNP implements PnpInterface {
      */
     static getRegisteredAdapters(): Record<string, AdapterConfig>;
     constructor(config?: GlobalPnpConfig);
+    openChannel(): Promise<void>;
     on<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
     off<T>(event: PnpEventType, listener: PnpEventListener<T>): void;
     emit<T>(event: PnpEventType, data: T): void;

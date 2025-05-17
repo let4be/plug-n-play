@@ -41,6 +41,7 @@ export interface AdapterAddresses {
     [key: string]: string | any;
 }
 export interface AdapterInterface {
+    openChannel(): Promise<void>;
     isConnected(): Promise<boolean>;
     connect(): Promise<any>;
     disconnect(): Promise<void>;

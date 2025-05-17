@@ -13,6 +13,7 @@ export declare class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implemen
     constructor(args: Adapter.ConstructorArgs);
     private clearStoredSession;
     private restoreFromStorage;
+    openChannel(): Promise<void>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;
     unwrapResponse: <T extends any>(response: any) => T;

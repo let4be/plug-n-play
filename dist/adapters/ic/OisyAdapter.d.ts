@@ -9,6 +9,7 @@ export declare class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implemen
     private signerAgent;
     private transport;
     constructor(args: Adapter.ConstructorArgs);
+    openChannel(): Promise<void>;
     isConnected(): Promise<boolean>;
     getPrincipal(): Promise<string>;
     getAccountId(): Promise<string>;

@@ -13,6 +13,7 @@ export declare class ConnectionManager implements PnpEventEmitter {
     private logger;
     constructor(config: GlobalPnpConfig, logger?: ErrorManager);
     private _resetState;
+    openChannel(): Promise<void>;
     connect(walletId?: string): Promise<WalletAccount | null>;
     disconnect(): Promise<void>;
     isAuthenticated(): boolean;
