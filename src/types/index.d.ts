@@ -111,6 +111,7 @@ export namespace Adapter {
 
   export interface Interface {
     // Core wallet functionality
+    openChannel(): Promise<void>;
     isConnected(): Promise<boolean>;
     connect(): Promise<Wallet.Account>;
     disconnect(): Promise<void>;

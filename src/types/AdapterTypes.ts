@@ -48,6 +48,7 @@ export interface AdapterAddresses {
 }
 
 export interface AdapterInterface {
+  openChannel(): Promise<void>;
   isConnected(): Promise<boolean>;
   connect(): Promise<any>;
   disconnect(): Promise<void>;

@@ -32,6 +32,10 @@ export abstract class BaseAdapter<T extends AdapterSpecificConfig = AdapterSpeci
     this.state = newState;
   }
 
+  openChannel(): Promise<void> {
+    return Promise.resolve();
+  }
+
   getState(): Adapter.Status {
     return this.state;
   }

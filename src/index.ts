@@ -123,6 +123,10 @@ export class PNP implements PnpInterface {
     });
   }
 
+  async openChannel(): Promise<void> {
+      await this.connectionManager.openChannel();
+  }
+
   // Event emitter methods
   on<T>(event: PnpEventType, listener: PnpEventListener<T>): void {
     this.eventEmitter.on(event, listener);

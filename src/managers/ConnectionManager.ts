@@ -45,6 +45,12 @@ export class ConnectionManager implements PnpEventEmitter {
     });
   }
 
+  async openChannel(): Promise<void> {
+    if (this.provider) {
+      await this.provider.openChannel();
+    }
+  }
+
   async connect(walletId?: string): Promise<WalletAccount | null> {
     if (this.status === AdapterStatus.CONNECTING) {
       // If already connecting, wait for the current attempt to complete

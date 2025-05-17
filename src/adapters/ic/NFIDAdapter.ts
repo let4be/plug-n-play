@@ -129,6 +129,12 @@ export class NFIDAdapter extends BaseAdapter<NFIDAdapterConfig> implements Adapt
     }
   }
 
+  async openChannel(): Promise<void> {
+	if (this.signer) {
+		await this.signer.openChannel();
+	}
+  }
+
   async isConnected(): Promise<boolean> {
     return this.identity !== null && this.state === Adapter.Status.CONNECTED;
   }

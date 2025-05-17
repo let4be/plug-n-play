@@ -47,6 +47,12 @@ export class OisyAdapter extends BaseAdapter<OisyAdapterConfig> implements Adapt
       agent: this.agent,
     });
   }
+
+  async openChannel(): Promise<void> {
+	if (this.signer) {
+		await this.signer.openChannel();
+	}
+  }
   
   async isConnected(): Promise<boolean> {
     return this.agent !== null && this.signer !== null && this.signerAgent !== null;
